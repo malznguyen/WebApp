@@ -1,0 +1,10 @@
+PyQt5
+PyPDF2
+docx2txt
+Pillow
+matplotlib
+numpy
+wordcloud
+requests
+openai
+python-dotenv
