@@ -103,7 +103,7 @@ class TextAnalysis:
                 'fig', 'figure', 'table', 'section', 'chapter', 'page', 'appendix', 'index', 'image', 'example'
             }
             
-            words = re.findall(r'\b[a-zA-Zàáâãèéêìíòóôõùúăđĩũơưăạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỵỷỹ]+(?:[-'\'][a-zA-Zàáâãèéêìíòóôõùúăđĩũơưăạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỵỷỹ]+)*\b', text.lower())
+            words = re.findall(r"\b[a-zA-Zàáâãèéêìíòóôõùúăđĩũơưăạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỵỷỹ]+(?:[-'\u2019][a-zA-Zàáâãèéêìíòóôõùúăđĩũơưăạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỵỷỹ]+)*\b", text.lower())
             filtered_words = [word for word in words if word not in stop_words and len(word) > 1 and not word.isdigit()]
             if not filtered_words: return []
             return Counter(filtered_words).most_common(top_n)

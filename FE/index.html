@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Toolkit v2.0</title>
+    
+    <link rel="icon" type="image/x-icon" href="assets/icons/favicon.ico">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body class="h-full bg-gray-50 font-sans antialiased" x-data="app()" x-init="initApp()">
+    
+    <!-- Header Navigation -->
+    <header class="header-nav fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4 border-b border-gray-200">
+        <div class="flex items-center justify-between max-w-7xl mx-auto">
+            
+            <!-- Logo & Title -->
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-cube text-blue-600 text-xl"></i>
+                <h1 class="text-lg sm:text-xl font-bold text-gray-800">Enhanced Toolkit</h1>
+                <span class="hidden sm:inline px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">v2.0</span>
+            </div>
+            
+            <!-- Tab Navigation -->
+            <nav class="flex space-x-1">
+                <button @click="activeTab = 'image-search'" 
+                        :class="activeTab === 'image-search' ? 'tab-button active' : 'tab-button'"
+                        class="px-3 sm:px-6 py-2 font-medium rounded-t-lg transition-colors text-sm sm:text-base">
+                    <i class="fas fa-search mr-1 sm:mr-2"></i>
+                    <span class="hidden sm:inline">Image Search</span>
+                    <span class="sm:hidden">Search</span>
+                </button>
+                <button @click="activeTab = 'document-summary'"
+                        :class="activeTab === 'document-summary' ? 'tab-button active' : 'tab-button'"
+                        class="px-3 sm:px-6 py-2 font-medium rounded-t-lg transition-colors text-sm sm:text-base">
+                    <i class="fas fa-file-text mr-1 sm:mr-2"></i>
+                    <span class="hidden sm:inline">Document Summary</span>
+                    <span class="sm:hidden">Docs</span>
+                </button>
+            </nav>
+            
+            <!-- Status & Settings -->
+            <div class="flex items-center space-x-2 sm:space-x-4">
+                <div class="hidden lg:block text-sm text-gray-500" x-text="statusMessage"></div>
+                <button class="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="pt-16 sm:pt-20 pb-12 sm:pb-16 min-h-full">
+        
+        <!-- Image Search Tab -->
+        <div x-show="activeTab === 'image-search'" 
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             class="h-full flex flex-col lg:flex-row">
+            
+            <!-- Upload Panel -->
+            <div class="w-full lg:w-1/3 bg-white border-b lg:border-b-0 lg:border-r border-gray-200 p-4 sm:p-6 overflow-y-auto">
+                <div class="space-y-6">
+                    
+                    <!-- Upload Area -->
+                    <div x-show="!selectedImage" class="upload-area p-6 sm:p-8 text-center" @click="browseImageFiles()">
+                        <div class="upload-icon">
+                            <i class="fas fa-cloud-upload text-3xl sm:text-4xl text-gray-400 mb-4"></i>
+                        </div>
+                        <h3 class="text-base sm:text-lg font-medium text-gray-900 mb-2">Upload Image</h3>
+                        <p class="text-sm text-gray-500 mb-4">Drag and drop an image here or click to browse</p>
+                        <div class="flex justify-center">
+                            <button class="btn btn-primary" type="button">
+                                <i class="fas fa-folder-open mr-2"></i>
+                                Browse Files
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Image Preview -->
+                    <div x-show="selectedImage" class="card p-4">
+                        <div class="flex items-start justify-between mb-3">
+                            <h3 class="font-medium text-gray-900">Selected Image</h3>
+                            <button @click="removeSelectedImage()" class="text-gray-400 hover:text-red-500 transition-colors">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Preview Image -->
+                        <div class="mb-3 bg-gray-100 rounded-lg overflow-hidden">
+                            <img x-show="selectedImage" :src="selectedImage?.preview" :alt="selectedImage?.name" 
+                                 class="w-full h-48 object-contain">
+                        </div>
+                        
+                        <!-- Image Info -->
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-gray-500">Name:</span>
+                                <span class="font-medium text-gray-900 truncate ml-2" x-text="selectedImage?.name"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-500">Size:</span>
+                                <span class="font-medium text-gray-900" x-text="selectedImage ? (selectedImage.size / 1024 / 1024).toFixed(2) + ' MB' : ''"></span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Search Options -->
+                    <div class="card p-4">
+                        <h4 class="font-medium text-gray-900 mb-3">Search Options</h4>
+                        <label class="flex items-center space-x-3 cursor-pointer">
+                            <input type="checkbox" x-model="searchOptions.socialOnly" class="form-checkbox">
+                            <span class="text-sm text-gray-700">Search only on social media</span>
+                        </label>
+                    </div>
+                    
+                    <!-- Search Button - Always visible -->
+                    <div class="space-y-2">
+                        <button class="btn btn-primary w-full btn-lg" 
+                                :disabled="!canSearch" 
+                                :class="{'opacity-50 cursor-not-allowed': !canSearch}"
+                                @click="startImageSearch()">
+                            <span class="flex items-center justify-center">
+                                <i x-show="!isSearching" class="fas fa-search mr-2"></i>
+                                <div x-show="isSearching" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                                <span x-text="isSearching ? 'Searching...' : 'Start Search'"></span>
+                            </span>
+                        </button>
+                    </div>
+                    
+                    <!-- Progress -->
+                    <div x-show="isSearching" class="space-y-2">
+                        <div class="progress-container">
+                            <div class="progress-bar" :style="'width: ' + searchProgress + '%'"></div>
+                        </div>
+                        <p class="text-sm text-gray-600 text-center" x-text="searchStatus"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Results Panel -->
+            <div class="w-full lg:w-2/3 p-4 sm:p-6 overflow-y-auto">
+                
+                <!-- Results Header -->
+                <div x-show="searchResults.length > 0" class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
+                    <h2 class="text-lg sm:text-xl font-semibold text-gray-900 mb-2 sm:mb-0">
+                        Search Results
+                        <span class="text-sm font-normal text-gray-500" x-text="'(' + searchResults.length + ' found)'"></span>
+                    </h2>
+                    
+                    <div class="flex items-center space-x-3">
+                        <select class="form-input w-auto" x-model="resultsFilter">
+                            <option value="all">All Sources</option>
+                            <option value="social">Social Media Only</option>
+                            <option value="facebook">Facebook</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="twitter">Twitter</option>
+                        </select>
+                        
+                        <div class="flex bg-gray-100 rounded-lg p-1">
+                            <button @click="viewMode = 'list'" 
+                                    :class="viewMode === 'list' ? 'bg-white shadow-sm' : ''"
+                                    class="p-2 rounded text-gray-600 hover:text-gray-900">
+                                <i class="fas fa-list"></i>
+                            </button>
+                            <button @click="viewMode = 'grid'" 
+                                    :class="viewMode === 'grid' ? 'bg-white shadow-sm' : ''"
+                                    class="p-2 rounded text-gray-600 hover:text-gray-900">
+                                <i class="fas fa-th"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Results Grid/List -->
+                <div x-show="searchResults.length > 0" 
+                     :class="viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : 'space-y-4'">
+                    
+                    <template x-for="result in filteredResults" :key="result.link">
+                        <div class="result-card p-4 hover-lift" 
+                             :class="result.is_social_media ? 'social-media ' + getSocialPlatform(result.link) : ''">
+                            
+                            <!-- Social Badge -->
+                            <div x-show="result.is_social_media" 
+                                 class="social-badge" 
+                                 :class="getSocialPlatform(result.link)"
+                                 x-text="getSocialPlatform(result.link)"></div>
+                            
+                            <!-- Content -->
+                            <h3 class="font-medium text-gray-900 mb-2 line-clamp-2" x-text="result.title"></h3>
+                            <p class="text-sm text-gray-600 mb-3 line-clamp-3" x-text="result.snippet"></p>
+                            <p class="text-xs text-gray-400 mb-3" x-text="result.displayed_link"></p>
+                            
+                            <!-- Action -->
+                            <button @click="openResult(result.link)" 
+                                    class="btn btn-secondary btn-sm w-full sm:w-auto">
+                                <i class="fas fa-external-link-alt mr-2"></i>
+                                View Source
+                            </button>
+                        </div>
+                    </template>
+                </div>
+                
+                <!-- Empty State -->
+                <div x-show="searchResults.length === 0 && !isSearching" class="text-center py-12">
+                    <i class="fas fa-search text-4xl text-gray-300 mb-4"></i>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">No results yet</h3>
+                    <p class="text-gray-500">Upload an image and start searching to see results</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Document Summary Tab -->
+        <div x-show="activeTab === 'document-summary'"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             class="h-full">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 sm:p-6 max-w-7xl mx-auto">
+                
+                <!-- Control Panel -->
+                <div class="lg:col-span-3 space-y-6">
+                    
+                    <!-- File Upload -->
+                    <div class="card p-4">
+                        <h3 class="font-medium text-gray-900 mb-4">Upload Documents</h3>
+                        <div class="upload-area p-6 text-center">
+                            <i class="fas fa-file-upload text-3xl text-gray-400 mb-3"></i>
+                            <p class="text-sm text-gray-500 mb-3">Drag files here or click to browse</p>
+                            <button class="btn btn-primary btn-sm">
+                                <i class="fas fa-plus mr-2"></i>
+                                Add Files
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Processing Options -->
+                    <div class="card p-4">
+                        <h3 class="font-medium text-gray-900 mb-4">Processing Mode</h3>
+                        <div class="space-y-3">
+                            <label class="flex items-center space-x-3 cursor-pointer">
+                                <input type="radio" name="mode" value="individual" x-model="processingMode" class="form-checkbox">
+                                <span class="text-sm text-gray-700">Individual Analysis</span>
+                            </label>
+                            <label class="flex items-center space-x-3 cursor-pointer">
+                                <input type="radio" name="mode" value="batch" x-model="processingMode" class="form-checkbox">
+                                <span class="text-sm text-gray-700">Batch Synthesis</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Models -->
+                    <div class="card p-4">
+                        <h3 class="font-medium text-gray-900 mb-4">AI Models</h3>
+                        <div class="space-y-3">
+                            <label class="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" x-model="aiModels.deepseek" class="form-checkbox">
+                                <span class="text-sm text-gray-700">DeepSeek</span>
+                            </label>
+                            <label class="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" x-model="aiModels.grok" class="form-checkbox">
+                                <span class="text-sm text-gray-700">Grok</span>
+                            </label>
+                            <label class="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" x-model="aiModels.chatgpt" class="form-checkbox">
+                                <span class="text-sm text-gray-700">ChatGPT</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Detail Level -->
+                    <div class="card p-4">
+                        <h3 class="font-medium text-gray-900 mb-4">Detail Level</h3>
+                        <div class="space-y-3">
+                            <input type="range" min="10" max="90" x-model="detailLevel" class="form-slider">
+                            <div class="flex justify-between text-xs text-gray-500">
+                                <span>Brief</span>
+                                <span x-text="detailLevel + '%'"></span>
+                                <span>Detailed</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Process Button -->
+                    <button class="btn btn-primary w-full btn-lg" :disabled="!canProcess" @click="startProcessing()">
+                        <i class="fas fa-play mr-2"></i>
+                        <span x-text="isProcessing ? 'Processing...' : 'Start Processing'"></span>
+                    </button>
+                </div>
+                
+                <!-- Content Viewer -->
+                <div class="lg:col-span-6 space-y-6">
+                    
+                    <!-- Tab Navigation -->
+                    <div class="card p-4">
+                        <div class="flex space-x-4 border-b border-gray-200">
+                            <button @click="contentTab = 'original'" 
+                                    :class="contentTab === 'original' ? 'tab-button active' : 'tab-button'"
+                                    class="pb-2 px-1 font-medium text-sm">
+                                Original Content
+                            </button>
+                            <button @click="contentTab = 'results'" 
+                                    :class="contentTab === 'results' ? 'tab-button active' : 'tab-button'"
+                                    class="pb-2 px-1 font-medium text-sm">
+                                AI Results
+                            </button>
+                            <button @click="contentTab = 'analysis'" 
+                                    :class="contentTab === 'analysis' ? 'tab-button active' : 'tab-button'"
+                                    class="pb-2 px-1 font-medium text-sm">
+                                Analysis
+                            </button>
+                        </div>
+                        
+                        <!-- Content Area -->
+                        <div class="mt-4 min-h-[400px]">
+                            <div x-show="contentTab === 'original'" class="prose max-w-none">
+                                <div x-show="!originalContent" class="text-center py-12">
+                                    <i class="fas fa-file-alt text-4xl text-gray-300 mb-4"></i>
+                                    <p class="text-gray-500">No document selected</p>
+                                </div>
+                                <div x-show="originalContent" class="text-sm text-gray-700 whitespace-pre-wrap" x-text="originalContent"></div>
+                            </div>
+                            
+                            <div x-show="contentTab === 'results'" class="space-y-4">
+                                <div x-show="!aiResults.length" class="text-center py-12">
+                                    <i class="fas fa-robot text-4xl text-gray-300 mb-4"></i>
+                                    <p class="text-gray-500">No AI results yet</p>
+                                </div>
+                                <template x-for="result in aiResults" :key="result.model">
+                                    <div class="card p-4">
+                                        <h4 class="font-medium text-gray-900 mb-2" x-text="result.model"></h4>
+                                        <div class="text-sm text-gray-700 whitespace-pre-wrap" x-text="result.content"></div>
+                                    </div>
+                                </template>
+                            </div>
+                            
+                            <div x-show="contentTab === 'analysis'" class="space-y-4">
+                                <div x-show="!analysisData" class="text-center py-12">
+                                    <i class="fas fa-chart-bar text-4xl text-gray-300 mb-4"></i>
+                                    <p class="text-gray-500">No analysis data yet</p>
+                                </div>
+                                <div x-show="analysisData" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="card p-4 text-center">
+                                        <div class="text-2xl font-bold text-blue-600" x-text="analysisData.word_count"></div>
+                                        <div class="text-sm text-gray-500">Words</div>
+                                    </div>
+                                    <div class="card p-4 text-center">
+                                        <div class="text-2xl font-bold text-green-600" x-text="analysisData.sentence_count"></div>
+                                        <div class="text-sm text-gray-500">Sentences</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Insights Dashboard -->
+                <div class="lg:col-span-3 space-y-6">
+                    
+                    <!-- Processing Queue -->
+                    <div class="card p-4">
+                        <h3 class="font-medium text-gray-900 mb-4">Processing Queue</h3>
+                        <div x-show="!processingQueue.length" class="text-center py-4">
+                            <i class="fas fa-clock text-2xl text-gray-300 mb-2"></i>
+                            <p class="text-sm text-gray-500">No files in queue</p>
+                        </div>
+                        <div x-show="processingQueue.length" class="space-y-2">
+                            <template x-for="item in processingQueue" :key="item.id">
+                                <div class="flex items-center space-x-3 p-2 bg-gray-50 rounded">
+                                    <i class="fas fa-file text-gray-400"></i>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-medium text-gray-900 truncate" x-text="item.name"></p>
+                                        <p class="text-xs text-gray-500" x-text="item.status"></p>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Stats -->
+                    <div class="card p-4">
+                        <h3 class="font-medium text-gray-900 mb-4">Quick Stats</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between">
+                                <span class="text-sm text-gray-500">Documents Processed</span>
+                                <span class="text-sm font-medium" x-text="stats.processed"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-sm text-gray-500">Average Time</span>
+                                <span class="text-sm font-medium" x-text="stats.avgTime"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Log Panel -->
+    <footer class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 transition-all duration-300 z-40"
+            :class="logPanelExpanded ? 'h-48 sm:h-64' : 'h-10 sm:h-12'">
+        
+        <!-- Log Header -->
+        <div class="flex items-center justify-between px-4 sm:px-6 py-2 sm:py-3 cursor-pointer bg-gray-50"
+             @click="logPanelExpanded = !logPanelExpanded">
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-terminal text-gray-500 text-sm"></i>
+                <span class="text-xs sm:text-sm font-medium text-gray-700">System Logs</span>
+                <span class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded" x-text="logEntries.length + ' entries'"></span>
+            </div>
+            <i class="fas text-gray-400 text-sm" :class="logPanelExpanded ? 'fa-chevron-down' : 'fa-chevron-up'"></i>
+        </div>
+        
+        <!-- Log Content -->
+        <div x-show="logPanelExpanded" class="log-panel h-36 sm:h-52 overflow-y-auto px-4 sm:px-6 py-2">
+            <template x-for="entry in logEntries" :key="entry.id">
+                <div class="log-entry" :class="entry.level.toLowerCase()">
+                    <span class="log-timestamp" x-text="entry.timestamp"></span>
+                    <span x-text="entry.message"></span>
+                </div>
+            </template>
+        </div>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div x-show="isLoading" 
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-4 sm:p-6 max-w-sm w-full mx-4">
+            <div class="flex items-center space-x-4">
+                <div class="progress-circular"></div>
+                <div>
+                    <div class="font-medium text-gray-900" x-text="loadingTitle"></div>
+                    <div class="text-sm text-gray-500" x-text="loadingMessage"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div x-show="notification.show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 transform translate-x-full"
+         x-transition:enter-end="opacity-100 transform translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 transform translate-x-0"
+         x-transition:leave-end="opacity-0 transform translate-x-full"
+         class="fixed top-20 sm:top-24 right-4 z-50 max-w-sm w-full">
+        <div class="notification" :class="notification.type">
+            <div class="p-4">
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 mt-0.5">
+                        <i class="fas text-lg" 
+                           :class="notification.type === 'success' ? 'fa-check-circle text-green-500' : 
+                                   notification.type === 'error' ? 'fa-times-circle text-red-500' : 
+                                   notification.type === 'warning' ? 'fa-exclamation-triangle text-yellow-500' :
+                                   'fa-info-circle text-blue-500'"></i>
+                    </div>
+                    <div class="ml-3 w-0 flex-1">
+                        <p class="text-sm font-semibold text-gray-900" x-text="notification.title"></p>
+                        <p class="mt-1 text-sm text-gray-600" x-text="notification.message"></p>
+                    </div>
+                    <div class="ml-4 flex-shrink-0">
+                        <button @click="notification.show = false" 
+                                class="inline-flex text-gray-400 hover:text-gray-600 transition-colors">
+                            <i class="fas fa-times text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="text/javascript" src="/eel.js"></script>
+    <script src="js/app.js"></script>
+    
+</body>
+</html>
