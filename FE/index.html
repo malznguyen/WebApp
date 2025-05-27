@@ -12,23 +12,36 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/components.css">
+
+    <style>
+        /* Custom styles for toggle switch if needed, or use a library */
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #3b82f6; /* Tailwind blue-500 */
+        }
+        .toggle-checkbox:checked + .toggle-label .toggle-ball {
+            transform: translateX(100%);
+        }
+        .toggle-label {
+            transition: background-color 0.2s ease-in-out;
+        }
+        .toggle-ball {
+            transition: transform 0.2s ease-in-out;
+        }
+    </style>
 </head>
 <body class="h-full bg-gray-50 font-sans antialiased" x-data="app()" x-init="initApp()">
     
-    <!-- Header Navigation -->
     <header class="header-nav fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4 border-b border-gray-200">
-        <div class="flex items-center justify-between max-w-7xl mx-auto">
+        <div class="flex items-center justify-between max-w-screen-2xl mx-auto">
             
-            <!-- Logo & Title -->
             <div class="flex items-center space-x-3">
                 <i class="fas fa-cube text-blue-600 text-xl"></i>
                 <h1 class="text-lg sm:text-xl font-bold text-gray-800">Enhanced Toolkit</h1>
                 <span class="hidden sm:inline px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">v2.0</span>
             </div>
             
-            <!-- Tab Navigation -->
             <nav class="flex space-x-1">
                 <button @click="activeTab = 'image-search'" 
                         :class="activeTab === 'image-search' ? 'tab-button active' : 'tab-button'"
@@ -46,9 +59,11 @@
                 </button>
             </nav>
             
-            <!-- Status & Settings -->
             <div class="flex items-center space-x-2 sm:space-x-4">
                 <div class="hidden lg:block text-sm text-gray-500" x-text="statusMessage"></div>
+                <button @click="performFullCleanup()" title="Cleanup Temporary Files" class="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fas fa-broom"></i>
+                </button>
                 <button class="p-2 text-gray-400 hover:text-gray-600 transition-colors">
                     <i class="fas fa-cog"></i>
                 </button>
@@ -56,22 +71,21 @@
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="pt-16 sm:pt-20 pb-12 sm:pb-16 min-h-full">
         
-        <!-- Image Search Tab -->
         <div x-show="activeTab === 'image-search'" 
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="opacity-0"
              x-transition:enter-end="opacity-100"
              class="h-full flex flex-col lg:flex-row">
             
-            <!-- Upload Panel -->
             <div class="w-full lg:w-1/3 bg-white border-b lg:border-b-0 lg:border-r border-gray-200 p-4 sm:p-6 overflow-y-auto">
                 <div class="space-y-6">
                     
-                    <!-- Upload Area -->
-                    <div x-show="!selectedImage" class="upload-area p-6 sm:p-8 text-center" @click="browseImageFiles()">
+                    <div x-show="!selectedImage" class="upload-area p-6 sm:p-8 text-center" @click="browseImageFiles()"
+                         @dragover.prevent="$el.classList.add('drag-active')"
+                         @dragleave.prevent="$el.classList.remove('drag-active')"
+                         @drop.prevent="handleImageDrop($event); $el.classList.remove('drag-active')">
                         <div class="upload-icon">
                             <i class="fas fa-cloud-upload text-3xl sm:text-4xl text-gray-400 mb-4"></i>
                         </div>
@@ -85,7 +99,6 @@
                         </div>
                     </div>
 
-                    <!-- Image Preview -->
                     <div x-show="selectedImage" class="card p-4">
                         <div class="flex items-start justify-between mb-3">
                             <h3 class="font-medium text-gray-900">Selected Image</h3>
@@ -94,13 +107,11 @@
                             </button>
                         </div>
                         
-                        <!-- Preview Image -->
-                        <div class="mb-3 bg-gray-100 rounded-lg overflow-hidden">
+                        <div class="mb-3 bg-gray-100 rounded-lg overflow-hidden aspect-video flex items-center justify-center">
                             <img x-show="selectedImage" :src="selectedImage?.preview" :alt="selectedImage?.name" 
-                                 class="w-full h-48 object-contain">
+                                 class="max-w-full max-h-full object-contain">
                         </div>
                         
-                        <!-- Image Info -->
                         <div class="space-y-2 text-sm">
                             <div class="flex justify-between">
                                 <span class="text-gray-500">Name:</span>
@@ -108,25 +119,23 @@
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-gray-500">Size:</span>
-                                <span class="font-medium text-gray-900" x-text="selectedImage ? (selectedImage.size / 1024 / 1024).toFixed(2) + ' MB' : ''"></span>
+                                <span class="font-medium text-gray-900" x-text="selectedImage ? formatFileSize(selectedImage.size) : ''"></span>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Search Options -->
-                    <div class="card p-4">
+                    <div x-show="selectedImage" class="card p-4">
                         <h4 class="font-medium text-gray-900 mb-3">Search Options</h4>
-                        <label class="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" x-model="searchOptions.socialOnly" class="form-checkbox">
+                        <label class="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded-md">
+                            <input type="checkbox" x-model="searchOptions.socialOnly" class="form-checkbox text-blue-600 focus:ring-blue-500">
                             <span class="text-sm text-gray-700">Search only on social media</span>
                         </label>
                     </div>
                     
-                    <!-- Search Button -->
-                    <div class="space-y-2">
+                    <div x-show="selectedImage" class="space-y-2">
                         <button class="btn btn-primary w-full btn-lg" 
-                                :disabled="!canSearch" 
-                                :class="{'opacity-50 cursor-not-allowed': !canSearch}"
+                                :disabled="!canSearch || isSearching" 
+                                :class="{'opacity-50 cursor-not-allowed': !canSearch || isSearching}"
                                 @click="startImageSearch()">
                             <span class="flex items-center justify-center">
                                 <i x-show="!isSearching" class="fas fa-search mr-2"></i>
@@ -136,8 +145,7 @@
                         </button>
                     </div>
                     
-                    <!-- Progress -->
-                    <div x-show="isSearching" class="space-y-2">
+                    <div x-show="isSearching" class="space-y-2 pt-2">
                         <div class="progress-container">
                             <div class="progress-bar" :style="'width: ' + searchProgress + '%'"></div>
                         </div>
@@ -146,258 +154,399 @@
                 </div>
             </div>
             
-            <!-- Results Panel -->
-            <div class="w-full lg:w-2/3 p-4 sm:p-6 overflow-y-auto">
-                
-                <!-- Results Header -->
-                <div x-show="searchResults.length > 0" class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-                    <h2 class="text-lg sm:text-xl font-semibold text-gray-900 mb-2 sm:mb-0">
+            <div class="w-full lg:w-2/3 p-4 sm:p-6 overflow-y-auto bg-gray-50">
+                <div x-show="searchResults.length > 0 || isSearching" class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 pb-3 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-2 sm:mb-0">
                         Search Results
-                        <span class="text-sm font-normal text-gray-500" x-text="'(' + searchResults.length + ' found)'"></span>
+                        <span x-show="searchResults.length > 0 && !isSearching" class="text-base font-normal text-gray-500" x-text="'(' + filteredResults.length + ' of ' + searchResults.length + ' shown)'"></span>
                     </h2>
                     
-                    <div class="flex items-center space-x-3">
-                        <select class="form-input w-auto" x-model="resultsFilter">
+                    <div x-show="searchResults.length > 0 && !isSearching" class="flex items-center space-x-3">
+                        <select class="form-input w-auto text-sm py-1.5 focus-ring" x-model="resultsFilter">
                             <option value="all">All Sources</option>
-                            <option value="social">Social Media Only</option>
+                            <option value="social">All Social Media</option>
                             <option value="facebook">Facebook</option>
                             <option value="instagram">Instagram</option>
-                            <option value="twitter">Twitter</option>
+                            <option value="twitter">Twitter/X</option>
+                            <option value="linkedin">LinkedIn</option>
+                            <option value="tiktok">TikTok</option>
+                            <option value="youtube">YouTube</option>
+                            <option value="pinterest">Pinterest</option>
+                            <option value="reddit">Reddit</option>
                         </select>
                         
-                        <div class="flex bg-gray-100 rounded-lg p-1">
+                        <div class="flex bg-gray-200 rounded-lg p-0.5">
                             <button @click="viewMode = 'list'" 
-                                    :class="viewMode === 'list' ? 'bg-white shadow-sm' : ''"
-                                    class="p-2 rounded text-gray-600 hover:text-gray-900">
+                                    :class="viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'"
+                                    class="p-1.5 rounded-md transition-colors">
                                 <i class="fas fa-list"></i>
                             </button>
                             <button @click="viewMode = 'grid'" 
-                                    :class="viewMode === 'grid' ? 'bg-white shadow-sm' : ''"
-                                    class="p-2 rounded text-gray-600 hover:text-gray-900">
+                                    :class="viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'"
+                                    class="p-1.5 rounded-md transition-colors">
                                 <i class="fas fa-th"></i>
                             </button>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Results Grid/List -->
-                <div x-show="searchResults.length > 0" 
-                     :class="viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : 'space-y-4'">
-                    
-                    <template x-for="result in filteredResults" :key="result.link">
-                        <div class="result-card p-4 hover-lift" 
+                <div x-show="searchResults.length > 0 && !isSearching" 
+                     :class="viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5' : 'space-y-4'">
+                    <template x-for="result in filteredResults" :key="result.link + Math.random()">
+                        <div class="result-card p-4 flex flex-col hover-lift" 
                              :class="result.is_social_media ? 'social-media ' + getSocialPlatform(result.link) : ''">
-                            
-                            <!-- Social Badge -->
                             <div x-show="result.is_social_media" 
                                  class="social-badge" 
                                  :class="getSocialPlatform(result.link)"
-                                 x-text="getSocialPlatform(result.link)"></div>
-                            
-                            <!-- Content -->
-                            <h3 class="font-medium text-gray-900 mb-2 line-clamp-2" x-text="result.title"></h3>
-                            <p class="text-sm text-gray-600 mb-3 line-clamp-3" x-text="result.snippet"></p>
-                            <p class="text-xs text-gray-400 mb-3" x-text="result.displayed_link"></p>
-                            
-                            <!-- Action -->
+                                 x-text="getSocialPlatform(result.link).replace('_', ' ')"></div>
+                            <h3 class="font-semibold text-gray-800 mb-1 line-clamp-2 hover:text-blue-600 transition-colors cursor-pointer" 
+                                @click="openResult(result.link)" x-text="result.title"></h3>
+                            <p class="text-xs text-gray-400 mb-2 break-all" x-text="result.displayed_link"></p>
+                            <p class="text-sm text-gray-600 mb-3 line-clamp-3 flex-grow" x-text="result.snippet"></p>
                             <button @click="openResult(result.link)" 
-                                    class="btn btn-secondary btn-sm w-full sm:w-auto">
+                                    class="btn btn-secondary btn-sm w-full sm:w-auto mt-auto">
                                 <i class="fas fa-external-link-alt mr-2"></i>
                                 View Source
                             </button>
                         </div>
                     </template>
+                     <div x-show="filteredResults.length === 0 && searchResults.length > 0" class="col-span-full text-center py-10">
+                        <i class="fas fa-filter text-4xl text-gray-400 mb-3"></i>
+                        <p class="text-gray-600">No results match your current filter.</p>
+                    </div>
                 </div>
                 
-                <!-- Empty State -->
-                <div x-show="searchResults.length === 0 && !isSearching" class="text-center py-12">
-                    <i class="fas fa-search text-4xl text-gray-300 mb-4"></i>
-                    <h3 class="text-lg font-medium text-gray-900 mb-2">No results yet</h3>
-                    <p class="text-gray-500">Upload an image and start searching to see results</p>
+                <div x-show="isSearching && searchResults.length === 0" class="flex flex-col items-center justify-center h-full text-center py-12">
+                    <div class="progress-circular border-blue-500 mx-auto mb-6 h-12 w-12"></div>
+                    <h3 class="text-xl font-medium text-gray-700" x-text="searchStatus || 'Searching for images...'"></h3>
+                    <p class="text-gray-500">This may take a moment.</p>
+                </div>
+                 <div x-show="!isSearching && searchResults.length === 0 && selectedImage" class="flex flex-col items-center justify-center h-full text-center py-12">
+                    <i class="far fa-folder-open text-6xl text-gray-300 mb-6"></i>
+                    <h3 class="text-2xl font-medium text-gray-700 mb-2">No Results Found</h3>
+                    <p class="text-gray-500 max-w-md">Your search for the selected image did not return any results. Try a different image or broaden search options.</p>
+                </div>
+                <div x-show="!selectedImage" class="flex flex-col items-center justify-center h-full text-center py-12">
+                    <i class="fas fa-images text-6xl text-gray-300 mb-6"></i>
+                    <h3 class="text-2xl font-medium text-gray-700 mb-2">No Image Selected</h3>
+                    <p class="text-gray-500 max-w-md">Upload an image using the panel on the left and click "Start Search" to find similar images.</p>
                 </div>
             </div>
         </div>
         
-        <!-- Document Summary Tab -->
         <div x-show="activeTab === 'document-summary'"
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="opacity-0"
              x-transition:enter-end="opacity-100"
              class="h-full">
             
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 sm:p-6 max-w-7xl mx-auto">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 sm:p-6 max-w-screen-2xl mx-auto">
                 
-                <!-- Control Panel -->
-                <div class="lg:col-span-3 space-y-6">
-                    
-                    <!-- File Upload -->
-                    <div class="card p-4">
-                        <h3 class="font-medium text-gray-900 mb-4">Upload Documents</h3>
-                        <div class="upload-area p-6 text-center" 
-                             @click="browseDocumentFiles()"
-                             @dragover.prevent
-                             @drop.prevent="handleDocumentDrop($event)">
-                            <i class="fas fa-file-upload text-3xl text-gray-400 mb-3"></i>
-                            <p class="text-sm text-gray-500 mb-3">Drag files here or click to browse</p>
-                            <p class="text-xs text-gray-400 mb-3">Supports: PDF, DOCX, TXT, MD</p>
-                            <div class="flex justify-center">
-                                <button class="btn btn-primary btn-sm" type="button">
-                                    <i class="fas fa-plus mr-2"></i>
-                                    Add Files
-                                </button>
+                <div class="lg:col-span-3 space-y-4"> <div class="card bg-white rounded-lg shadow"> <div class="p-4">
+                            <h3 class="font-medium text-gray-900 mb-3 flex items-center"><i class="fas fa-upload mr-2 text-blue-500"></i> Upload Documents</h3>
+                            <div class="upload-area p-5 text-center text-sm" 
+                                 @click="browseDocumentFiles()"
+                                 @dragover.prevent="$el.classList.add('drag-active')"
+                                 @dragleave.prevent="$el.classList.remove('drag-active')"
+                                 @drop.prevent="handleDocumentDrop($event); $el.classList.remove('drag-active')">
+                                <i class="fas fa-file-medical text-2xl text-gray-400 mb-2"></i>
+                                <p class="text-gray-500 mb-2">Drag files or click to browse</p>
+                                <p class="text-xs text-gray-400">PDF, DOCX, TXT, MD</p>
                             </div>
                         </div>
-                        
-                        <!-- File Queue -->
-                        <div x-show="processingQueue.length > 0" class="mt-4 space-y-2">
-                            <h4 class="text-sm font-medium text-gray-700">Files in Queue:</h4>
-                            <template x-for="item in processingQueue" :key="item.id">
-                                <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
-                                    <div class="flex items-center space-x-3 flex-1 min-w-0">
-                                        <i class="fas fa-file text-gray-400"></i>
-                                        <div class="flex-1 min-w-0">
-                                            <p class="text-sm font-medium text-gray-900 truncate" x-text="item.name"></p>
-                                            <p class="text-xs text-gray-500" x-text="item.type + ' - ' + (item.size / 1024).toFixed(1) + ' KB'"></p>
+                    </div>
+                    
+                    <div class="card bg-white rounded-lg shadow"> <div class="p-4">
+                            <h3 class="font-medium text-gray-900 mb-3 flex items-center"><i class="fas fa-paragraph mr-2 text-blue-500"></i> Direct Text Input</h3>
+                            <textarea x-model="directInputText"
+                                      rows="4"
+                                      class="form-input w-full text-sm mb-2 focus-ring"
+                                      placeholder="Paste or type text..."></textarea>
+                            <input type="text" x-model="directInputName" 
+                                   class="form-input w-full text-sm mb-3 focus-ring" 
+                                   placeholder="Optional: Name for this text">
+                            <button @click="addDirectTextToQueue()"
+                                    class="btn btn-secondary w-full btn-sm"
+                                    :disabled="!directInputText.trim()">
+                                <i class="fas fa-plus mr-2"></i> Add Text to Queue
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card bg-white rounded-lg shadow"> <div @click="settingsPanels.processing = !settingsPanels.processing"
+                             class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 rounded-t-lg"
+                             :class="!settingsPanels.processing ? 'rounded-b-lg' : ''">
+                            <div class="flex items-center">
+                                <i class="fas fa-cogs mr-2 text-gray-500 w-5 text-center"></i>
+                                <h3 class="font-medium text-sm text-gray-800">Processing Mode</h3>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-xs text-gray-500 mr-2 capitalize" x-text="processingMode"></span>
+                                <i class="fas text-xs text-gray-400 transform transition-transform duration-200"
+                                   :class="settingsPanels.processing ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                            </div>
+                        </div>
+                        <div x-show="settingsPanels.processing" x-collapse.duration.300ms class="px-3 pb-3 pt-2 border-t border-gray-200">
+                            <div class="space-y-1.5">
+                                <label class="flex items-center space-x-2.5 cursor-pointer p-1.5 rounded-md hover:bg-gray-100 transition-colors">
+                                    <input type="radio" name="processingMode" value="individual" x-model="processingMode" class="form-checkbox text-blue-600 focus:ring-offset-0 focus:ring-blue-500 focus-ring h-4 w-4">
+                                    <span class="text-sm text-gray-700">Individual Analysis</span>
+                                </label>
+                                <label class="flex items-center space-x-2.5 cursor-pointer p-1.5 rounded-md hover:bg-gray-100 transition-colors">
+                                    <input type="radio" name="processingMode" value="batch" x-model="processingMode" class="form-checkbox text-blue-600 focus:ring-offset-0 focus:ring-blue-500 focus-ring h-4 w-4">
+                                    <span class="text-sm text-gray-700">Batch Synthesis (Files Only)</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card bg-white rounded-lg shadow"> <div @click="settingsPanels.aiModels = !settingsPanels.aiModels"
+                             class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
+                             :class="!settingsPanels.aiModels ? 'rounded-lg' : 'rounded-t-lg'">
+                            <div class="flex items-center">
+                                <i class="fas fa-robot mr-2 text-gray-500 w-5 text-center"></i>
+                                <h3 class="font-medium text-sm text-gray-800">AI Models</h3>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-xs text-gray-500 mr-2" x-text="Object.values(aiModels).filter(Boolean).length + ' active'"></span>
+                                <i class="fas text-xs text-gray-400 transform transition-transform duration-200"
+                                   :class="settingsPanels.aiModels ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                            </div>
+                        </div>
+                        <div x-show="settingsPanels.aiModels" x-collapse.duration.300ms class="px-4 pb-4 pt-3 border-t border-gray-200">
+                            <div class="space-y-3">
+                                <template x-for="modelKey in Object.keys(aiModels)" :key="modelKey">
+                                    <label class="flex items-center justify-between cursor-pointer">
+                                        <span class="text-sm text-gray-700" x-text="modelKey.charAt(0).toUpperCase() + modelKey.slice(1)"></span>
+                                        <div class="relative">
+                                            <input type="checkbox" :id="'toggle-' + modelKey" class="sr-only toggle-checkbox" x-model="aiModels[modelKey]">
+                                            <div class="toggle-label block bg-gray-200 w-10 h-5 rounded-full"></div>
+                                            <div class="toggle-ball absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full shadow transform"></div>
                                         </div>
-                                        <span class="text-xs px-2 py-1 rounded-full"
-                                              :class="item.status === 'Ready' ? 'bg-blue-100 text-blue-800' : 
-                                                      item.status === 'Processing...' ? 'bg-yellow-100 text-yellow-800' :
-                                                      item.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                                                      'bg-red-100 text-red-800'"
-                                              x-text="item.status"></span>
-                                    </div>
-                                    <button @click="removeFromQueue(item.id)" 
-                                            x-show="item.status === 'Ready'"
-                                            class="ml-2 text-gray-400 hover:text-red-500 transition-colors">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </template>
+                                    </label>
+                                </template>
+                            </div>
                         </div>
                     </div>
-                    
-                    <!-- Processing Options -->
-                    <div class="card p-4">
-                        <h3 class="font-medium text-gray-900 mb-4">Processing Mode</h3>
-                        <div class="space-y-3">
-                            <label class="flex items-center space-x-3 cursor-pointer">
-                                <input type="radio" name="mode" value="individual" x-model="processingMode" class="form-checkbox">
-                                <span class="text-sm text-gray-700">Individual Analysis</span>
-                            </label>
-                            <label class="flex items-center space-x-3 cursor-pointer">
-                                <input type="radio" name="mode" value="batch" x-model="processingMode" class="form-checkbox">
-                                <span class="text-sm text-gray-700">Batch Synthesis</span>
-                            </label>
+
+                    <div class="card bg-white rounded-lg shadow"> <div @click="settingsPanels.language = !settingsPanels.language"
+                             class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
+                             :class="!settingsPanels.language ? 'rounded-lg' : 'rounded-t-lg'">
+                            <div class="flex items-center">
+                                <i class="fas fa-language mr-2 text-gray-500 w-5 text-center"></i>
+                                <h3 class="font-medium text-sm text-gray-800">Language</h3>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-xs text-gray-500 mr-2" x-text="targetLanguage ? targetLanguage.toUpperCase() : 'Original'"></span>
+                                <i class="fas text-xs text-gray-400 transform transition-transform duration-200"
+                                   :class="settingsPanels.language ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                            </div>
+                        </div>
+                        <div x-show="settingsPanels.language" x-collapse.duration.300ms class="px-3 pb-3 pt-2 border-t border-gray-200">
+                             <select id="targetLanguage" x-model="targetLanguage" class="form-input w-full text-sm py-1.5 focus-ring">
+                                <option :value="null">Original Language</option>
+                                <option value="en">English</option>
+                                <option value="vi">Vietnamese</option>
+                                <option value="fr">French</option>
+                                <option value="de">German</option>
+                                <option value="es">Spanish</option>
+                                </select>
                         </div>
                     </div>
-                    
-                    <!-- AI Models -->
-                    <div class="card p-4">
-                        <h3 class="font-medium text-gray-900 mb-4">AI Models</h3>
-                        <div class="space-y-3">
-                            <label class="flex items-center space-x-3 cursor-pointer">
-                                <input type="checkbox" x-model="aiModels.deepseek" class="form-checkbox">
-                                <span class="text-sm text-gray-700">DeepSeek</span>
-                            </label>
-                            <label class="flex items-center space-x-3 cursor-pointer">
-                                <input type="checkbox" x-model="aiModels.grok" class="form-checkbox">
-                                <span class="text-sm text-gray-700">Grok</span>
-                            </label>
-                            <label class="flex items-center space-x-3 cursor-pointer">
-                                <input type="checkbox" x-model="aiModels.chatgpt" class="form-checkbox">
-                                <span class="text-sm text-gray-700">ChatGPT</span>
-                            </label>
+
+                    <div class="card bg-white rounded-lg shadow"> <div @click="settingsPanels.detailLevel = !settingsPanels.detailLevel"
+                             class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
+                             :class="!settingsPanels.detailLevel ? 'rounded-lg' : 'rounded-t-lg'">
+                            <div class="flex items-center">
+                                <i class="fas fa-sliders-h mr-2 text-gray-500 w-5 text-center"></i>
+                                <h3 class="font-medium text-sm text-gray-800">Detail Level</h3>
+                            </div>
+                             <div class="flex items-center">
+                                <span class="text-xs text-gray-500 mr-2" x-text="detailLevel + '%'"></span>
+                                <i class="fas text-xs text-gray-400 transform transition-transform duration-200"
+                                   :class="settingsPanels.detailLevel ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                            </div>
                         </div>
-                    </div>
-                    
-                    <!-- Detail Level -->
-                    <div class="card p-4">
-                        <h3 class="font-medium text-gray-900 mb-4">Detail Level</h3>
-                        <div class="space-y-3">
-                            <input type="range" min="10" max="90" x-model="detailLevel" class="form-slider">
-                            <div class="flex justify-between text-xs text-gray-500">
+                        <div x-show="settingsPanels.detailLevel" x-collapse.duration.300ms class="px-3 pb-3 pt-2 border-t border-gray-200">
+                            <input type="range" id="detailLevel" min="10" max="90" step="5" x-model.number="detailLevel" class="form-slider w-full h-2 accent-blue-600">
+                            <div class="flex justify-between text-xs text-gray-500 mt-1 px-0.5">
                                 <span>Brief</span>
-                                <span x-text="detailLevel + '%'"></span>
                                 <span>Detailed</span>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Process Button -->
-                    <button class="btn btn-primary w-full btn-lg" :disabled="!canProcess" @click="startProcessing()">
+                    <button class="btn btn-primary w-full btn-lg sticky bottom-4 z-20 shadow-lg" 
+                            :disabled="!canProcess || isProcessing" 
+                            :class="{'opacity-60 cursor-not-allowed': !canProcess || isProcessing}"
+                            @click="startProcessing()">
                         <i x-show="!isProcessing" class="fas fa-play mr-2"></i>
-                        <div x-show="isProcessing" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                        <div x-show="isProcessing" class="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-2"></div>
                         <span x-text="isProcessing ? 'Processing...' : 'Start Processing'"></span>
                     </button>
+
+                    <div class="card bg-white rounded-lg shadow"> <div @click="settingsPanels.queue = !settingsPanels.queue"
+                             class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
+                             :class="!settingsPanels.queue ? 'rounded-lg' : 'rounded-t-lg'">
+                            <div class="flex items-center">
+                                <i class="fas fa-list-ol mr-2 text-gray-500 w-5 text-center"></i>
+                                <h3 class="font-medium text-sm text-gray-800">Processing Queue</h3>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-xs text-gray-500 mr-2" x-text="'(' + processingQueue.length + ' items)'"></span>
+                                <i class="fas text-xs text-gray-400 transform transition-transform duration-200"
+                                   :class="settingsPanels.queue ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                            </div>
+                        </div>
+                        <div x-show="settingsPanels.queue" x-collapse.duration.300ms class="border-t border-gray-200 max-h-48 overflow-y-auto styled-scrollbar">
+                             <div x-show="processingQueue.length > 0" class="p-2 space-y-1.5">
+                                <template x-for="item in processingQueue" :key="item.id">
+                                    <div class="flex items-center justify-between p-2 rounded-md"
+                                         :class="{ 'bg-blue-50 ring-1 ring-blue-200': activePreviewFileId === item.id, 'hover:bg-gray-100': activePreviewFileId !== item.id }"
+                                         @click="setActivePreviewFile(item.id)">
+                                        <div class="flex items-center space-x-2 flex-1 min-w-0">
+                                            <i :class="item.isDirectText ? 'fas fa-keyboard' : 'fas fa-file-alt'" class="text-gray-400 text-sm flex-shrink-0 w-4 text-center"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-xs font-medium text-gray-700 truncate" x-text="item.name"></p>
+                                                <p class="text-xs text-gray-500" x-text="item.type + ' - ' + formatFileSize(item.size)"></p>
+                                            </div>
+                                            <span class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap font-medium flex-shrink-0"
+                                                  :class="{
+                                                    'bg-blue-100 text-blue-600': item.status === 'Ready',
+                                                    'bg-yellow-100 text-yellow-600 animate-pulse': item.status === 'Processing...',
+                                                    'bg-green-100 text-green-600': item.status === 'Completed',
+                                                    'bg-red-100 text-red-600': item.status === 'Error'
+                                                  }"
+                                                  x-text="item.status"></span>
+                                        </div>
+                                        <button @click.stop="removeFromQueue(item.id)" title="Remove" class="ml-1.5 text-gray-400 hover:text-red-500 p-0.5 rounded-full hover:bg-red-100 focus:outline-none flex-shrink-0">
+                                            <i class="fas fa-times text-xs"></i>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                            <p x-show="processingQueue.length === 0" class="text-xs text-gray-400 text-center p-3">Queue is empty.</p>
+                        </div>
+                    </div>
+
+
                 </div>
                 
-                <!-- Content Viewer -->
-                <div class="lg:col-span-6 space-y-6">
-                    
-                    <!-- Tab Navigation -->
-                    <div class="card p-4">
-                        <div class="flex space-x-4 border-b border-gray-200">
-                            <button @click="contentTab = 'original'" 
-                                    :class="contentTab === 'original' ? 'tab-button active' : 'tab-button'"
-                                    class="pb-2 px-1 font-medium text-sm">
-                                Original Content
-                            </button>
-                            <button @click="contentTab = 'results'" 
-                                    :class="contentTab === 'results' ? 'tab-button active' : 'tab-button'"
-                                    class="pb-2 px-1 font-medium text-sm">
-                                AI Results
-                            </button>
-                            <button @click="contentTab = 'analysis'" 
-                                    :class="contentTab === 'analysis' ? 'tab-button active' : 'tab-button'"
-                                    class="pb-2 px-1 font-medium text-sm">
-                                Analysis
+                <div class="lg:col-span-6 space-y-6"> 
+                    <div class="card p-4 min-h-[calc(100vh-12rem)] flex flex-col shadow-lg bg-white">
+                        <div class="flex items-center justify-between border-b border-gray-200 pb-2 mb-4">
+                            <div class="flex space-x-1">
+                                <button @click="contentTab = 'original'" 
+                                        :class="contentTab === 'original' ? 'tab-button active text-sm' : 'tab-button text-sm'"
+                                        class="px-3 py-1.5 font-medium">
+                                    <i class="fas fa-file-lines mr-1.5"></i> Original Content
+                                </button>
+                                <button @click="contentTab = 'results'; if (analysisData && analysisData.common_words) renderWordCloud(analysisData.common_words);" 
+                                        :class="contentTab === 'results' ? 'tab-button active text-sm' : 'tab-button text-sm'"
+                                        class="px-3 py-1.5 font-medium">
+                                    <i class="fas fa-wand-magic-sparkles mr-1.5"></i> AI Results 
+                                    <span x-show="aiResults.length > 0 && !isProcessing" x-text="'(' + aiResults.filter(r => r && !r.is_error).length + ')'" class="text-xs ml-0.5 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full"></span>
+                                </button>
+                                <button @click="contentTab = 'analysis'; if (analysisData && analysisData.common_words && !analysisData.error) renderWordCloud(analysisData.common_words);"
+                                        :class="contentTab === 'analysis' ? 'tab-button active text-sm' : 'tab-button text-sm'"
+                                        class="px-3 py-1.5 font-medium">
+                                    <i class="fas fa-chart-simple mr-1.5"></i> Analysis
+                                </button>
+                            </div>
+                             <button @click="copyContentToClipboard()" title="Copy current tab's content"
+                                    class="btn btn-secondary btn-sm text-xs">
+                                <i class="fas fa-copy mr-1.5"></i> Copy
                             </button>
                         </div>
                         
-                        <!-- Content Area -->
-                        <div class="mt-4 min-h-[400px]">
-                            <div x-show="contentTab === 'original'" class="prose max-w-none">
-                                <div x-show="!originalContent" class="text-center py-12">
-                                    <i class="fas fa-file-alt text-4xl text-gray-300 mb-4"></i>
-                                    <p class="text-gray-500">No document selected</p>
+                        <div class="flex-grow overflow-y-auto pr-2 styled-scrollbar">
+                            <div x-show="contentTab === 'original'">
+                                <div x-show="isLoading && loadingTitle === 'Loading Preview'" class="flex flex-col items-center justify-center h-64 text-center">
+                                     <div class="progress-circular border-blue-500 mx-auto mb-4 h-10 w-10"></div>
+                                     <p class="text-gray-600 text-lg font-medium" x-text="loadingMessage || 'Loading document content...'"></p>
                                 </div>
-                                <div x-show="originalContent" class="text-sm text-gray-700 whitespace-pre-wrap" x-text="originalContent"></div>
+                                <div x-show="!originalContent && !(isLoading && loadingTitle === 'Loading Preview')" class="flex flex-col items-center justify-center h-64 text-center">
+                                    <i class="fas fa-file-alt text-5xl text-gray-300 mb-5"></i>
+                                    <p class="text-gray-500 text-lg">
+                                        <span x-show="processingQueue.length === 0">Upload documents or add text to get started.</span>
+                                        <span x-show="processingQueue.length > 0">Select an item from the queue to preview its content.</span>
+                                    </p>
+                                </div>
+                                <div x-show="originalContent && !(isLoading && loadingTitle === 'Loading Preview')" class="prose prose-sm max-w-none text-gray-800 whitespace-pre-wrap leading-relaxed selection:bg-yellow-200 selection:text-black" x-html="highlightSearchTerm(originalContent, searchTerm)"></div>
                             </div>
                             
-                            <div x-show="contentTab === 'results'" class="space-y-4">
-                                <div x-show="!aiResults.length" class="text-center py-12">
-                                    <i class="fas fa-robot text-4xl text-gray-300 mb-4"></i>
-                                    <p class="text-gray-500">No AI results yet</p>
+                            <div x-show="contentTab === 'results'" class="space-y-5">
+                                <div x-show="isProcessing && aiResults.length === 0" class="flex flex-col items-center justify-center h-64 text-center">
+                                    <div class="progress-circular border-blue-500 mx-auto mb-4 h-10 w-10"></div>
+                                    <p class="text-gray-600 text-lg font-medium">Generating AI results...</p>
                                 </div>
-                                <template x-for="result in aiResults" :key="result.model">
-                                    <div class="card p-4">
-                                        <h4 class="font-medium text-gray-900 mb-2" x-text="result.model"></h4>
-                                        <div class="text-sm text-gray-700 whitespace-pre-wrap" x-text="result.content"></div>
+                                <div x-show="!isProcessing && aiResults.length === 0 && activePreviewFileId" class="flex flex-col items-center justify-center h-64 text-center">
+                                    <i class="fas fa-robot text-5xl text-gray-300 mb-5"></i>
+                                    <p class="text-gray-500 text-lg">No AI results for this item.</p>
+                                    <p class="text-gray-400">Process the item with AI models enabled to see summaries.</p>
+                                </div>
+                                 <div x-show="!activePreviewFileId && aiResults.length === 0" class="flex flex-col items-center justify-center h-64 text-center">
+                                    <i class="fas fa-hand-pointer text-5xl text-gray-300 mb-5"></i>
+                                    <p class="text-gray-500 text-lg">Select an item and process it.</p>
+                                </div>
+                                <template x-for="result in aiResults" :key="result.model + Math.random()">
+                                    <div class="card p-3.5 bg-gray-50/60 border border-gray-200/80 rounded-lg">
+                                        <h4 class="font-semibold text-gray-800 mb-2 flex items-center text-base">
+                                            <i :class="getAIModelIcon(result.model) + ' mr-2 text-lg text-blue-600'"></i>
+                                            <span x-text="result.model + ( (processingMode === 'batch' || (activePreviewFileId && processingQueue.find(i=>i.id === activePreviewFileId)?.isBatchMember)) && (result.model !== 'Error') ? ' Batch Synthesis' : ' Summary')"></span>
+
+                                        </h4>
+                                        <div x-show="result.is_error" class="text-sm text-red-700 bg-red-100 p-2.5 rounded-md border border-red-200 whitespace-pre-wrap" x-text="result.content"></div>
+                                        <div x-show="!result.is_error" class="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed selection:bg-yellow-200 selection:text-black" x-html="highlightSearchTerm(result.content, searchTerm)"></div>
                                     </div>
                                 </template>
                             </div>
                             
-                            <div x-show="contentTab === 'analysis'" class="space-y-4">
-                                <div x-show="!analysisData" class="text-center py-12">
-                                    <i class="fas fa-chart-bar text-4xl text-gray-300 mb-4"></i>
-                                    <p class="text-gray-500">No analysis data yet</p>
+                            <div x-show="contentTab === 'analysis'">
+                                <div x-show="isProcessing && !analysisData" class="flex flex-col items-center justify-center h-64 text-center">
+                                    <div class="progress-circular border-blue-500 mx-auto mb-4 h-10 w-10"></div>
+                                    <p class="text-gray-600 text-lg font-medium">Performing text analysis...</p>
                                 </div>
-                                <div x-show="analysisData" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div class="card p-4 text-center">
-                                        <div class="text-2xl font-bold text-blue-600" x-text="analysisData.word_count"></div>
-                                        <div class="text-sm text-gray-500">Words</div>
-                                    </div>
-                                    <div class="card p-4 text-center">
-                                        <div class="text-2xl font-bold text-green-600" x-text="analysisData.sentence_count"></div>
-                                        <div class="text-sm text-gray-500">Sentences</div>
-                                    </div>
-                                    <div class="card p-4 text-center">
-                                        <div class="text-2xl font-bold text-purple-600" x-text="analysisData.paragraph_count"></div>
-                                        <div class="text-sm text-gray-500">Paragraphs</div>
-                                    </div>
-                                    <div class="card p-4 text-center">
-                                        <div class="text-2xl font-bold text-orange-600" x-text="analysisData.avg_word_length ? analysisData.avg_word_length.toFixed(1) : 0"></div>
-                                        <div class="text-sm text-gray-500">Avg Word Length</div>
+                                <div x-show="!isProcessing && !analysisData && activePreviewFileId" class="flex flex-col items-center justify-center h-64 text-center">
+                                    <i class="fas fa-chart-pie text-5xl text-gray-300 mb-5"></i>
+                                    <p class="text-gray-500 text-lg">No analysis data for this item.</p>
+                                    <p class="text-gray-400">Process an item to view text analysis metrics.</p>
+                                </div>
+                                 <div x-show="!activePreviewFileId && !analysisData" class="flex flex-col items-center justify-center h-64 text-center">
+                                    <i class="fas fa-hand-pointer text-5xl text-gray-300 mb-5"></i>
+                                    <p class="text-gray-500 text-lg">Select an item and process it.</p>
+                                </div>
+                                <div x-show="analysisData" class="space-y-4">
+                                    <div x-show="analysisData.error" class="col-span-full text-sm text-red-700 bg-red-100 p-2.5 rounded-md border border-red-200" x-text="'Analysis Error: ' + analysisData.error"></div>
+                                    <div x-show="!analysisData.error">
+                                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm mb-4">
+                                            <div class="card p-3.5 bg-gray-50/30 text-center rounded-lg">
+                                                <div class="text-xs text-gray-500 uppercase tracking-wider">Words</div>
+                                                <div class="text-2xl font-semibold text-blue-600 mt-0.5" x-text="analysisData.word_count?.toLocaleString() || 'N/A'"></div>
+                                            </div>
+                                            <div class="card p-3.5 bg-gray-50/30 text-center rounded-lg">
+                                                <div class="text-xs text-gray-500 uppercase tracking-wider">Sentences</div>
+                                                <div class="text-2xl font-semibold text-green-600 mt-0.5" x-text="analysisData.sentence_count?.toLocaleString() || 'N/A'"></div>
+                                            </div>
+                                            <div class="card p-3.5 bg-gray-50/30 text-center rounded-lg">
+                                                <div class="text-xs text-gray-500 uppercase tracking-wider">Paragraphs</div>
+                                                <div class="text-2xl font-semibold text-purple-600 mt-0.5" x-text="analysisData.paragraph_count?.toLocaleString() || 'N/A'"></div>
+                                            </div>
+                                            <div class="card p-3.5 bg-gray-50/30 text-center rounded-lg">
+                                                <div class="text-xs text-gray-500 uppercase tracking-wider">Avg. Word Len</div>
+                                                <div class="text-xl font-semibold text-orange-600 mt-0.5" x-text="analysisData.avg_word_length ? Number(analysisData.avg_word_length).toFixed(1) : 'N/A'"></div>
+                                            </div>
+                                            <div class="card p-3.5 bg-gray-50/30 text-center rounded-lg col-span-2 sm:col-span-1">
+                                                <div class="text-xs text-gray-500 uppercase tracking-wider">Avg. Sent. Len</div>
+                                                <div class="text-xl font-semibold text-teal-600 mt-0.5" x-text="analysisData.avg_sentence_length ? Number(analysisData.avg_sentence_length).toFixed(1) + ' words' : 'N/A'"></div>
+                                            </div>
+                                        </div>
+                                        <div class="card p-4 bg-gray-50/30 rounded-lg" x-show="analysisData.common_words && analysisData.common_words.length > 0">
+                                            <h4 class="text-sm font-semibold text-gray-700 mb-2">Most Common Words (Top 15)</h4>
+                                             <div class="chart-container h-64 sm:h-72"> 
+                                                <canvas id="wordFrequencyChart"></canvas>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -405,124 +554,153 @@
                     </div>
                 </div>
                 
-                <!-- Insights Dashboard -->
-                <div class="lg:col-span-3 space-y-6">
-                    
-                    <!-- Processing Queue -->
-                    <div class="card p-4">
-                        <h3 class="font-medium text-gray-900 mb-4">Processing Queue</h3>
-                        <div x-show="!processingQueue.length" class="text-center py-4">
-                            <i class="fas fa-clock text-2xl text-gray-300 mb-2"></i>
-                            <p class="text-sm text-gray-500">No files in queue</p>
+                <div class="lg:col-span-3 space-y-4"> 
+                     <div class="card p-3.5 shadow-md bg-white">
+                        <h3 class="font-semibold text-gray-800 mb-2 text-sm flex items-center"><i class="fas fa-info-circle mr-2 text-gray-400"></i>Active Item Details</h3>
+                         <div x-show="activePreviewFileId && processingQueue.find(f => f.id === activePreviewFileId)" class="text-xs space-y-1">
+                            <p><strong class="text-gray-500">Name:</strong> <span class="text-blue-600 break-all" x-text="processingQueue.find(f => f.id === activePreviewFileId)?.name"></span></p>
+                            <p><strong class="text-gray-500">Size:</strong> <span class="text-gray-600" x-text="formatFileSize(processingQueue.find(f => f.id === activePreviewFileId)?.size)"></span></p>
+                            <p><strong class="text-gray-500">Type:</strong> <span class="text-gray-600" x-text="processingQueue.find(f => f.id === activePreviewFileId)?.type"></span></p>
+                            <p><strong class="text-gray-500">Status:</strong> 
+                                <span class="font-medium"
+                                      :class="{
+                                        'text-blue-600': processingQueue.find(f => f.id === activePreviewFileId)?.status === 'Ready',
+                                        'text-yellow-600 animate-pulse': processingQueue.find(f => f.id === activePreviewFileId)?.status === 'Processing...',
+                                        'text-green-600': processingQueue.find(f => f.id === activePreviewFileId)?.status === 'Completed',
+                                        'text-red-600': processingQueue.find(f => f.id === activePreviewFileId)?.status === 'Error'
+                                      }"
+                                      x-text="processingQueue.find(f => f.id === activePreviewFileId)?.status">
+                                </span>
+                            </p>
                         </div>
-                        <div x-show="processingQueue.length" class="space-y-2">
-                            <template x-for="item in processingQueue" :key="item.id">
-                                <div class="flex items-center space-x-3 p-2 bg-gray-50 rounded">
-                                    <i class="fas fa-file text-gray-400"></i>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-sm font-medium text-gray-900 truncate" x-text="item.name"></p>
-                                        <p class="text-xs text-gray-500" x-text="item.status"></p>
-                                    </div>
-                                </div>
-                            </template>
-                        </div>
+                        <div x-show="!activePreviewFileId && processingQueue.length > 0" class="text-xs text-gray-500 py-2 text-center">Select an item from the queue.</div>
+                        <div x-show="processingQueue.length === 0" class="text-xs text-gray-500 py-2 text-center">Add files or text to begin.</div>
                     </div>
-                    
-                    <!-- Quick Stats -->
-                    <div class="card p-4">
-                        <h3 class="font-medium text-gray-900 mb-4">Quick Stats</h3>
-                        <div class="space-y-3">
-                            <div class="flex justify-between">
-                                <span class="text-sm text-gray-500">Documents Processed</span>
-                                <span class="text-sm font-medium" x-text="stats.processed"></span>
+
+                    <div class="card p-3.5 shadow-md bg-white">
+                        <h3 class="font-semibold text-gray-800 mb-2 text-sm flex items-center">
+                            <i class="fas fa-search-plus mr-2 text-gray-400"></i>Content Search
+                        </h3>
+                        <input type="text" x-model="searchTerm" @input.debounce.300ms="searchTerm = $event.target.value" 
+                               placeholder="Search in displayed content..." class="form-input w-full text-xs py-1.5 focus-ring">
+                        <p class="text-xs text-gray-400 mt-1.5">Highlights terms in content tabs.</p>
+                    </div>
+
+                    <div class="card p-3.5 shadow-md bg-white">
+                        <h3 class="font-semibold text-gray-800 mb-2 text-sm flex items-center"><i class="fas fa-tachometer-alt mr-2 text-gray-400"></i>Session Stats</h3>
+                        <div class="space-y-1.5 text-xs">
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-500">Processed Items:</span>
+                                <span class="font-semibold text-gray-700 text-base" x-text="stats.processed"></span>
                             </div>
-                            <div class="flex justify-between">
-                                <span class="text-sm text-gray-500">Average Time</span>
-                                <span class="text-sm font-medium" x-text="stats.avgTime"></span>
                             </div>
-                        </div>
+                         <p x-show="isProcessing" class="text-xs text-yellow-600 mt-2 animate-pulse flex items-center"><i class="fas fa-spinner fa-spin mr-1.5"></i>Processing active...</p>
                     </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- Log Panel -->
-    <footer class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 transition-all duration-300 z-40"
+    <footer class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-top-md transition-all duration-300 z-40"
             :class="logPanelExpanded ? 'h-48 sm:h-64' : 'h-10 sm:h-12'">
-        
-        <!-- Log Header -->
-        <div class="flex items-center justify-between px-4 sm:px-6 py-2 sm:py-3 cursor-pointer bg-gray-50"
+        <div class="flex items-center justify-between px-4 sm:px-6 py-2 sm:py-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
              @click="logPanelExpanded = !logPanelExpanded">
             <div class="flex items-center space-x-3">
                 <i class="fas fa-terminal text-gray-500 text-sm"></i>
                 <span class="text-xs sm:text-sm font-medium text-gray-700">System Logs</span>
-                <span class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded" x-text="logEntries.length + ' entries'"></span>
+                <span class="px-2 py-0.5 text-xs bg-gray-200 text-gray-700 rounded-full" x-text="logEntries.length + (logEntries.length >= 200 ? '+' : '') + ' entries'"></span>
             </div>
-            <i class="fas text-gray-400 text-sm" :class="logPanelExpanded ? 'fa-chevron-down' : 'fa-chevron-up'"></i>
+            <i class="fas text-gray-500 text-sm transform transition-transform duration-200" :class="logPanelExpanded ? 'fa-chevron-down' : 'fa-chevron-up'"></i>
         </div>
-        
-        <!-- Log Content -->
-        <div x-show="logPanelExpanded" class="log-panel h-36 sm:h-52 overflow-y-auto px-4 sm:px-6 py-2">
+        <div x-show="logPanelExpanded" x-collapse.duration.300ms class="log-panel h-[calc(100%-2.5rem)] sm:h-[calc(100%-3rem)] overflow-y-auto px-4 sm:px-6 py-2 bg-slate-800 styled-scrollbar-dark">
             <template x-for="entry in logEntries" :key="entry.id">
-                <div class="log-entry" :class="entry.level.toLowerCase()">
-                    <span class="log-timestamp" x-text="entry.timestamp"></span>
-                    <span x-text="entry.message"></span>
+                <div class="log-entry text-xs font-mono" 
+                     :class="{ 
+                        'text-emerald-400': entry.level === 'SUCCESS',
+                        'text-sky-400': entry.level === 'INFO', 
+                        'text-amber-400': entry.level === 'WARNING', 
+                        'text-rose-400': entry.level === 'ERROR' 
+                     }">
+                    <span class="log-timestamp text-slate-500 mr-2 select-none" x-text="entry.timestamp"></span>
+                    <span class="font-semibold mr-1 select-none" x-text="'[' + entry.level + ']'"></span>
+                    <span class="whitespace-pre-wrap" x-text="entry.message"></span>
                 </div>
             </template>
         </div>
     </footer>
 
-    <!-- Loading Overlay -->
     <div x-show="isLoading" 
-         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg p-4 sm:p-6 max-w-sm w-full mx-4">
-            <div class="flex items-center space-x-4">
-                <div class="progress-circular"></div>
-                <div>
-                    <div class="font-medium text-gray-900" x-text="loadingTitle"></div>
-                    <div class="text-sm text-gray-500" x-text="loadingMessage"></div>
+         class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-[9999] transition-opacity"
+         x-transition:enter="ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+         x-transition:leave="ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+         aria-labelledby="loading-title" role="dialog" aria-modal="true" style="display: none;">
+        <div class="bg-white rounded-lg p-6 shadow-xl max-w-xs w-full mx-4 text-center">
+            <div class="progress-circular mx-auto mb-4 border-blue-500 h-10 w-10"></div>
+            <div id="loading-title" class="font-semibold text-lg text-gray-800 mb-1" x-text="loadingTitle || 'Loading...'"></div>
+            <div class="text-sm text-gray-600" x-text="loadingMessage || 'Please wait a moment.'"></div>
+        </div>
+    </div>
+
+    <div x-data="{}" x-init="
+        if (typeof Notifications === 'undefined') {
+            // Simple fallback if Notifications.js is not loaded
+            window.Notifications = { show: (type, title, message) => $dispatch('show-fallback-notification', { type, title, message }) };
+        }
+    ">
+        <div x-show="notification.show" @custom-show-fallback-notification.window="
+            notification.type = $event.detail.type;
+            notification.title = $event.detail.title;
+            notification.message = $event.detail.message;
+            notification.show = true;
+            setTimeout(() => notification.show = false, 5000);
+        "
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 transform translate-y-2 sm:translate-y-0 sm:translate-x-full"
+             x-transition:enter-end="opacity-100 transform translate-y-0 sm:translate-x-0"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100 transform translate-y-0 sm:translate-x-0"
+             x-transition:leave-end="opacity-0 transform translate-y-2 sm:translate-y-0 sm:translate-x-full"
+             class="fixed top-20 sm:top-24 right-4 z-[9990] w-full max-w-sm sm:max-w-md"
+             role="alert" aria-live="assertive" style="display: none;">
+            <div class="notification shadow-2xl rounded-lg overflow-hidden border-l-4"
+                 :class="{
+                    'bg-green-50 border-green-500': notification.type === 'success',
+                    'bg-red-50 border-red-500': notification.type === 'error',
+                    'bg-yellow-50 border-yellow-500': notification.type === 'warning',
+                    'bg-blue-50 border-blue-500': notification.type === 'info'
+                 }">
+                <div class="p-4">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0 mt-0.5">
+                            <i class="fas text-xl" 
+                               :class="{
+                                    'fa-check-circle text-green-500': notification.type === 'success',
+                                    'fa-times-circle text-red-500': notification.type === 'error',
+                                    'fa-exclamation-triangle text-yellow-500': notification.type === 'warning',
+                                    'fa-info-circle text-blue-500': notification.type === 'info'
+                               }"></i>
+                        </div>
+                        <div class="ml-3 w-0 flex-1">
+                            <p class="text-base font-semibold text-gray-900" x-text="notification.title"></p>
+                            <p class="mt-1 text-sm text-gray-700" x-text="notification.message"></p>
+                        </div>
+                        <div class="ml-4 flex-shrink-0">
+                            <button @click="notification.show = false" 
+                                    class="inline-flex text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400">
+                                <span class="sr-only">Close</span>
+                                <i class="fas fa-times text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Notification Toast -->
-    <div x-show="notification.show"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0 transform translate-x-full"
-         x-transition:enter-end="opacity-100 transform translate-x-0"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100 transform translate-x-0"
-         x-transition:leave-end="opacity-0 transform translate-x-full"
-         class="fixed top-20 sm:top-24 right-4 z-50 max-w-sm w-full">
-        <div class="notification" :class="notification.type">
-            <div class="p-4">
-                <div class="flex items-start">
-                    <div class="flex-shrink-0 mt-0.5">
-                        <i class="fas text-lg" 
-                           :class="notification.type === 'success' ? 'fa-check-circle text-green-500' : 
-                                   notification.type === 'error' ? 'fa-times-circle text-red-500' : 
-                                   notification.type === 'warning' ? 'fa-exclamation-triangle text-yellow-500' :
-                                   'fa-info-circle text-blue-500'"></i>
-                    </div>
-                    <div class="ml-3 w-0 flex-1">
-                        <p class="text-sm font-semibold text-gray-900" x-text="notification.title"></p>
-                        <p class="mt-1 text-sm text-gray-600" x-text="notification.message"></p>
-                    </div>
-                    <div class="ml-4 flex-shrink-0">
-                        <button @click="notification.show = false" 
-                                class="inline-flex text-gray-400 hover:text-gray-600 transition-colors">
-                            <i class="fas fa-times text-sm"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- Scripts -->
     <script type="text/javascript" src="/eel.js"></script>
+    <script src="js/components/common.js"></script> 
+    <script src="js/utils/notifications.js"></script> <script src="js/utils/chart-renderer.js"></script> 
     <script src="js/app.js"></script>
     
 </body>
