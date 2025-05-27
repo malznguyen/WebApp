@@ -29,6 +29,7 @@ function app() {
             chatgpt: false
         },
         detailLevel: 50,
+        targetLanguage: null,
         isProcessing: false,
         processingQueue: [],
         originalContent: '',
@@ -279,20 +280,69 @@ function app() {
             }
         },
 
+        browseDocumentFiles() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.pdf,.docx,.txt,.md';
+            input.multiple = true; // Allow multiple file selection
+            input.onchange = (e) => {
+                if (e.target.files.length > 0) {
+                    this.addFilesToQueue(Array.from(e.target.files));
+                }
+            };
+            input.click();
+        },
+
         addFilesToQueue(files) {
-            files.forEach(file => {
+            const validFiles = files.filter(file => {
+                const validExtensions = ['.pdf', '.docx', '.txt', '.md'];
+                return validExtensions.some(ext => 
+                    file.name.toLowerCase().endsWith(ext)
+                );
+            });
+
+            if (validFiles.length === 0) {
+                this.showNotification('error', 'Invalid Files', 'Please select PDF, DOCX, TXT, or MD files');
+                return;
+            }
+
+            validFiles.forEach(file => {
                 const item = {
                     id: Date.now() + Math.random(),
                     name: file.name,
                     size: file.size,
                     file: file,
-                    status: 'Ready'
+                    status: 'Ready',
+                    type: this.getFileType(file.name)
                 };
                 this.processingQueue.push(item);
             });
             
             this.canProcess = this.processingQueue.length > 0;
-            this.addLogEntry('info', `Added ${files.length} files to processing queue`);
+            this.addLogEntry('info', `Added ${validFiles.length} files to processing queue`);
+            
+            if (files.length > validFiles.length) {
+                const skipped = files.length - validFiles.length;
+                this.showNotification('warning', 'Some Files Skipped', 
+                    `${skipped} files were skipped (unsupported format)`);
+            }
+        },
+
+        removeFromQueue(itemId) {
+            this.processingQueue = this.processingQueue.filter(item => item.id !== itemId);
+            this.canProcess = this.processingQueue.length > 0;
+            this.addLogEntry('info', 'File removed from processing queue');
+        },
+
+        getFileType(filename) {
+            const ext = filename.toLowerCase().split('.').pop();
+            const types = {
+                'pdf': 'PDF Document',
+                'docx': 'Word Document', 
+                'txt': 'Text File',
+                'md': 'Markdown File'
+            };
+            return types[ext] || 'Unknown';
         },
 
         async startProcessing() {
@@ -329,13 +379,31 @@ function app() {
         },
 
         async processDocumentReal(item) {
-            const settings = {
-                processing_mode: this.processingMode,
-                detail_level: this.detailLevel,
-                ai_models: this.aiModels
-            };
-            
-            return await eel.process_document_web(item.file, settings)();
+            try {
+                // Convert file to base64 for upload
+                const base64Data = await this.fileToBase64(item.file);
+                
+                // Upload file first
+                const uploadResult = await eel.upload_file_web(base64Data, item.name)();
+                if (!uploadResult.success) {
+                    throw new Error(uploadResult.error);
+                }
+                
+                // Process document
+                const settings = {
+                    processing_mode: this.processingMode,
+                    detail_level: this.detailLevel,
+                    ai_models: this.aiModels,
+                    language: this.targetLanguage || null
+                };
+                
+                const result = await eel.process_document_web(uploadResult.temp_path, settings)();
+                return result;
+                
+            } catch (error) {
+                this.addLogEntry('error', `Document processing failed: ${error.message}`);
+                throw error;
+            }
         },
 
         async processDocumentDemo(item) {
@@ -344,6 +412,8 @@ function app() {
             // Mock processing result
             this.originalContent = `Sample content from ${item.name}\n\nThis is a demonstration of the document processing feature. In the real application, this would contain the extracted text from your document.`;
             
+            this.aiResults = [];
+            
             if (this.aiModels.deepseek) {
                 this.aiResults.push({
                     model: 'DeepSeek',
@@ -351,10 +421,17 @@ function app() {
                 });
             }
             
+            if (this.aiModels.grok) {
+                this.aiResults.push({
+                    model: 'Grok',
+                    content: 'This is a sample AI-generated summary from Grok model. It would provide a different perspective and analysis of your document.'
+                });
+            }
+            
             if (this.aiModels.chatgpt) {
                 this.aiResults.push({
                     model: 'ChatGPT',
-                    content: 'This is a sample AI-generated summary from ChatGPT model. It would provide a different perspective and analysis of your document.'
+                    content: 'This is a sample AI-generated summary from ChatGPT model. It would provide comprehensive analysis and insights from your document.'
                 });
             }
             
@@ -365,6 +442,17 @@ function app() {
                 avg_word_length: 4.2,
                 avg_sentence_length: 14.0
             };
+        },
+
+        handleProcessingResult(result, item) {
+            if (result.success) {
+                this.originalContent = result.original_text || '';
+                this.aiResults = result.ai_results ? result.ai_results.filter(r => r !== null) : [];
+                this.analysisData = result.analysis || null;
+                this.addLogEntry('info', `Processing completed for: ${item.name}`);
+            } else {
+                throw new Error(result.error || 'Processing failed');
+            }
         },
 
         // ===== UTILITY METHODS =====

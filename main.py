@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Enhanced Toolkit v2.0 - Web UI Bridge
-Main entry point connecting Python backend to web frontend via Eel
-"""
-
 import eel
 import sys
 import os
@@ -37,7 +31,7 @@ except ImportError as e:
 logger = setup_logger()
 
 # Initialize eel
-eel.init('web-frontend')
+eel.init('FE')
 
 # Global state
 active_searches = {}
@@ -390,6 +384,14 @@ def start_app():
             logger.warning(f"⚠️  Missing API keys: {config.get('missing_keys', [])}")
             logger.warning("App will run in demo mode")
         
+        # Start browser
+        try_start_browser()
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to start application: {e}", exc_info=True)
+        input("Press Enter to exit...")
+        sys.exit(1)
+
 def try_start_browser():
     """Try multiple browsers in order of preference"""
     browsers_to_try = [
