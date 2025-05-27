@@ -233,9 +233,12 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
     try:
         ai_models_selection = settings_from_frontend.get('ai_models', {})
         if not isinstance(ai_models_selection, dict): ai_models_selection = {}
-        normalized_settings['deepseek_key'] = DEEPSEEK_API_KEY if safe_bool(ai_models_selection.get('deepseek')) and DEEPSEEK_API_KEY else None
-        normalized_settings['grok_key'] = GROK_API_KEY if safe_bool(ai_models_selection.get('grok')) and GROK_API_KEY else None
-        normalized_settings['chatgpt_key'] = CHATGPT_API_KEY if safe_bool(ai_models_selection.get('chatgpt')) and CHATGPT_API_KEY else None
+        
+        # Fixed: Always use API keys if they exist and model is selected
+        normalized_settings['deepseek_key'] = DEEPSEEK_API_KEY if safe_bool(ai_models_selection.get('deepseek', False)) else None
+        normalized_settings['grok_key'] = GROK_API_KEY if safe_bool(ai_models_selection.get('grok', False)) else None
+        normalized_settings['chatgpt_key'] = CHATGPT_API_KEY if safe_bool(ai_models_selection.get('chatgpt', False)) else None
+        
         normalized_settings['summary_level'] = safe_int(settings_from_frontend.get('detail_level', 50), default=50, min_val=10, max_val=90)
         lang_code = settings_from_frontend.get('language')
         normalized_settings['target_language_code'] = lang_code if lang_code and isinstance(lang_code, str) and lang_code.strip() else None
@@ -435,7 +438,7 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     raise ValueError("No files successfully uploaded for batch processing.")
                 
                 eel.processingProgress(process_id, 30, f"Starting backend batch processing for {log_filename}...")()
-                result_dict = process_documents_batch_web(temp_files_for_batch, normalized_settings)
+                result_dict = process_documents_batch_web(temp_files_for_batch, settings)
 
             elif isinstance(file_input, dict) and 'direct_text_content' in file_input:
                 log_filename = file_input.get('text_input_name', 'Direct Text Input')
