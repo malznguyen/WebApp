@@ -6,10 +6,10 @@ MAX_RESULTS_TO_DISPLAY = 100  # Hiển thị tối đa 100 kết quả
 
 # Timeout 
 SEARCH_TIMEOUT_MS = 100000 
-API_TIMEOUT_SEC = 60  
+API_TIMEOUT_SEC = 180  
 
 # Document summary
-MAX_CHUNK_SIZE = 10000  # Kích thước tối đa của một chunk văn bản
+MAX_CHUNK_SIZE = 100000  # Kích thước tối đa của một chunk văn bản
 SUPPORTED_DOC_FORMATS = ['.pdf', '.docx', '.txt', '.md']
 
 # Kích thước ảnh xem trước

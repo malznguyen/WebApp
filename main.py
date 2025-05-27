@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Enhanced Toolkit v2.0 - Web UI Bridge
-Main entry point connecting Python backend to web frontend via Eel
-"""
-
 import eel
 import sys
 import os
@@ -16,7 +10,6 @@ import traceback
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 
-# Add backend to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 backend_path = os.path.join(current_dir, 'BE')
 sys.path.insert(0, backend_path)
@@ -49,7 +42,6 @@ app_config = None
 # ===== UTILITY FUNCTIONS =====
 
 def safe_int(value: Any, default: int = 0, min_val: int = None, max_val: int = None) -> int:
-    """Safely convert value to integer with bounds checking"""
     try:
         result = int(value)
         if min_val is not None:

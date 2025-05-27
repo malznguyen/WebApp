@@ -21,7 +21,7 @@ function app() {
         canSearch: false,
         selectedImage: null,
 
-        // ===== DOCUMENT PROCESSING STATE =====
+// ===== DOCUMENT PROCESSING STATE =====
         processingMode: 'individual',
         aiModels: {
             deepseek: true,
