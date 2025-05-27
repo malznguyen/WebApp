@@ -37,6 +37,11 @@ function app() {
         analysisData: null,
         contentTab: 'original',
         canProcess: false,
+        settingsPanels: {
+            processing: true,
+            aiModels: true,
+            advanced: false
+        },
 
         // ===== UI STATE =====
         logPanelExpanded: false,

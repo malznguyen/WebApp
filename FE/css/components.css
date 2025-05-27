@@ -533,24 +533,38 @@ button.btn {
     margin-right: 8px;
 }
 
-/* ===== CHARTS ===== */
-.chart-container {
-    position: relative;
-    height: 300px;
-    width: 100%;
-    background: white;
-    border-radius: 8px;
-    padding: 16px;
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--gray-200);
+/* ===== COLLAPSIBLE PANELS ===== */
+.collapsible-panel {
+    transition: all 0.3s ease;
 }
 
-.chart-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--gray-800);
-    margin-bottom: 16px;
-    text-align: center;
+.collapsible-trigger:hover {
+    background: var(--gray-50);
+}
+
+.collapsible-content {
+    overflow: hidden;
+}
+
+[x-transition] {
+    transition: all 0.3s ease;
+}
+
+/* Line clamp utilities */
+.line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Language buttons */
+.language-btn {
+    transition: all 0.2s ease;
+}
+
+.language-btn:hover:not(.active) {
+    background: var(--gray-200);
 }
 
 /* ===== LOADING STATES ===== */
