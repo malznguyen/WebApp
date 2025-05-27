@@ -144,7 +144,7 @@ def get_app_config() -> Dict[str, Any]:
                 'has_grok': bool(GROK_API_KEY and GROK_API_KEY.strip()),
                 'has_chatgpt': bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
                 'supported_formats': ['.pdf', '.docx', '.txt', '.md'],
-                'version': '2.1.0', # MODIFIED: You might want to update version
+                'version': '2.1.0',
                 'ready': api_keys_validation.get('ready', False),
                 'missing_keys': api_keys_validation.get('missing_keys', [])
             }
@@ -202,7 +202,7 @@ def search_image_async_web(image_data_base64: str, filename: str, social_media_o
     """Starts an asynchronous image search operation."""
     search_id = f"search_{int(time.time())}_{threading.get_ident()}"
     def run_search_in_thread():
-        def progress_update(percent, message): # Renamed from update_progress to avoid conflict if global
+        def progress_update(percent, message):
             if eel: eel.searchProgress(search_id, percent, message)()
         try:
             progress_update(0, f"Starting async search for {filename}...")
@@ -240,15 +240,8 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
         lang_code = settings_from_frontend.get('language')
         normalized_settings['target_language_code'] = lang_code if lang_code and isinstance(lang_code, str) and lang_code.strip() else None
         
-        # MODIFIED: Set is_synthesis_task based on processing_mode for document_api.py
-        processing_mode = settings_from_frontend.get('processing_mode', 'individual') # 'individual', 'batch'
-        # 'is_synthesis_task' for process_document means "should this single input (file or direct text) be chunk-synthesized if large?"
-        # It's true if mode is 'batch' (implying complex input) or if individual synthesis is desired (though UI implies batch means synthesis)
-        # For the new direct text input, if it's large, chunk synthesis might be needed.
-        # Let's assume 'batch' mode from frontend always implies synthesis.
-        # 'individual' mode typically implies summary, but could be synthesis if the doc is huge.
-        # The document_api.process_document's 'is_synthesis_task' makes it try chunk-based synthesis.
-        normalized_settings['is_synthesis_task'] = (processing_mode == 'batch') # Or any other logic to enable chunk-synthesis
+        processing_mode = settings_from_frontend.get('processing_mode', 'individual')
+        normalized_settings['is_synthesis_task'] = (processing_mode == 'batch')
 
         return normalized_settings
     except Exception as e:
@@ -316,7 +309,6 @@ def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, A
         ai_results_output = []
         for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
             content = processing_result.get(model_key)
-            # Ensure content is not None and is not a placeholder for unexecuted models
             if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
                 is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
                 ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
@@ -404,36 +396,33 @@ def process_documents_batch_web(temp_file_paths: List[str], settings_from_fronte
             'has_errors': True
         }
 
-# MODIFIED: process_document_async_web to handle direct text and refined batch
 @eel.expose
 def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[str, Any]]], settings: Dict[str, Any]) -> str:
     """Starts an asynchronous document processing task (single file, batch files, or direct text)."""
     process_id = f"doc_process_{int(time.time())}_{threading.get_ident()}"
 
     def run_doc_processing_in_thread():
-        temp_file_for_this_task: Optional[str] = None # For single file uploads that create a temp file
-        temp_files_for_batch: List[str] = []       # For batch file uploads
-        log_filename = "document_processing_task"  # Default log name
-        result_dict: Dict[str, Any] = {}           # To store the outcome
+        temp_file_for_this_task: Optional[str] = None
+        temp_files_for_batch: List[str] = []
+        log_filename = "document_processing_task"
+        result_dict: Dict[str, Any] = {}
 
         try:
-            # Validate and normalize settings (this sets 'is_synthesis_task' based on mode)
             normalized_settings = validate_processing_settings(settings)
-            is_batch_mode_from_settings = normalized_settings.get('is_synthesis_task', False) # True if processing_mode was 'batch'
+            is_batch_mode_from_settings = normalized_settings.get('is_synthesis_task', False)
 
-            # Determine if it's a batch operation based on file_input type
             is_batch_operation = isinstance(file_input, list)
 
             if is_batch_operation:
-                if not all(isinstance(item, dict) and 'file_data' in item and 'filename' in item for item in file_input): # type: ignore
+                if not all(isinstance(item, dict) and 'file_data' in item and 'filename' in item for item in file_input):
                     raise ValueError("For batch mode, 'file_input' must be a list of {file_data, filename} dictionaries.")
                 
-                log_filename = f"{len(file_input)} documents in batch" # type: ignore
+                log_filename = f"{len(file_input)} documents in batch"
                 eel.processingProgress(process_id, 5, f"Preparing batch: {log_filename}...")()
                 
                 failed_uploads = []
-                for i, item_dict in enumerate(file_input): # type: ignore
-                    eel.processingProgress(process_id, 10 + int(i/len(file_input)*20), f"Uploading {item_dict.get('filename','file ' + str(i+1))}...")() # type: ignore
+                for i, item_dict in enumerate(file_input):
+                    eel.processingProgress(process_id, 10 + int(i/len(file_input)*20), f"Uploading {item_dict.get('filename','file ' + str(i+1))}...")()
                     upload_resp = upload_file_web(item_dict['file_data'], item_dict['filename'])
                     if upload_resp['success'] and upload_resp['temp_path']:
                         temp_files_for_batch.append(upload_resp['temp_path'])
@@ -446,10 +435,8 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     raise ValueError("No files successfully uploaded for batch processing.")
                 
                 eel.processingProgress(process_id, 30, f"Starting backend batch processing for {log_filename}...")()
-                # Call process_documents_batch_web, passing the normalized settings
                 result_dict = process_documents_batch_web(temp_files_for_batch, normalized_settings)
 
-            # NEW: Handle direct text input (for single processing mode)
             elif isinstance(file_input, dict) and 'direct_text_content' in file_input:
                 log_filename = file_input.get('text_input_name', 'Direct Text Input')
                 text_content_to_process = file_input['direct_text_content']
@@ -457,14 +444,12 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                 if not text_content_to_process or not text_content_to_process.strip():
                     raise ValueError("Direct text input cannot be empty.")
                 
-                # temp_file_for_this_task remains None for direct text
                 eel.processingProgress(process_id, 30, f"Starting backend processing for {log_filename}...")()
                 
-                # is_synthesis_task for single doc means chunk-synthesis if doc is large.
-                # It's already part of normalized_settings from validate_processing_settings.
-                result_dict = process_document(
+                # Call process_document from document_api
+                raw_result = process_document(
                     input_text_to_process=text_content_to_process,
-                    file_path=None, # Explicitly None
+                    file_path=None,
                     is_synthesis_task=normalized_settings.get('is_synthesis_task', False),
                     deepseek_key=normalized_settings.get('deepseek_key'),
                     grok_key=normalized_settings.get('grok_key'),
@@ -472,15 +457,33 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     summary_level=normalized_settings.get('summary_level', 50),
                     target_language_code=normalized_settings.get('target_language_code')
                 )
-            # END NEW
+                
+                # Transform to expected frontend format
+                ai_results_output = []
+                for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
+                    content = raw_result.get(model_key)
+                    if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
+                        is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
+                        ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
+                
+                overall_error_message = raw_result.get('error')
+                has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output if isinstance(res, dict))
+                
+                result_dict = {
+                    'success': not bool(overall_error_message),
+                    'original_text': raw_result.get('original_text', ''),
+                    'ai_results': ai_results_output,
+                    'analysis': raw_result.get('analysis', {}),
+                    'error': overall_error_message,
+                    'has_errors': has_any_errors
+                }
 
-            elif isinstance(file_input, str): # Existing logic for file path (single document)
+            elif isinstance(file_input, str):
                 log_filename = os.path.basename(file_input)
                 eel.processingProgress(process_id, 5, f"Preparing to process file: {log_filename}...")()
-                # process_document_web takes raw settings, it will call validate_processing_settings internally
                 result_dict = process_document_web(file_input, settings)
 
-            elif isinstance(file_input, dict) and 'file_data' in file_input and 'filename' in file_input: # Existing logic for file upload (single document)
+            elif isinstance(file_input, dict) and 'file_data' in file_input and 'filename' in file_input:
                 log_filename = file_input['filename']
                 eel.processingProgress(process_id, 10, f"Uploading {log_filename} for processing...")()
                 upload_resp = upload_file_web(file_input['file_data'], log_filename)
@@ -488,7 +491,7 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     raise IOError(f"Upload failed for async processing of '{log_filename}': {upload_resp.get('error', 'Unknown upload error')}")
                 temp_file_for_this_task = upload_resp['temp_path']
                 eel.processingProgress(process_id, 30, f"Starting backend processing for {log_filename}...")()
-                result_dict = process_document_web(temp_file_for_this_task, settings) # Pass temp path
+                result_dict = process_document_web(temp_file_for_this_task, settings)
                 
             else:
                 raise ValueError(
@@ -505,10 +508,9 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
             except Exception as eel_err:
                  logger.error(f"Failed to send error to frontend for doc process ID {process_id}: {eel_err}")
         finally:
-            # Cleanup logic
-            if temp_file_for_this_task: # Single uploaded file's temp path
+            if temp_file_for_this_task:
                 cleanup_temp_file(temp_file_for_this_task)
-            if temp_files_for_batch:    # List of temp paths for batch uploaded files
+            if temp_files_for_batch:
                 logger.info(f"Async batch task {process_id} finished. Cleaning up {len(temp_files_for_batch)} temp files from batch upload.")
                 for path_to_clean in temp_files_for_batch:
                     cleanup_temp_file(path_to_clean)
@@ -520,7 +522,6 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
     doc_process_thread.start()
     logger.info(f"Asynchronous document processing task started with ID: {process_id} (Input type: {type(file_input)})")
     return process_id
-
 
 # ===== FILE HANDLING & PREVIEWS (Web Exposed) =====
 @eel.expose
@@ -537,7 +538,6 @@ def upload_file_web(file_data_base64: str, filename: str) -> Dict[str, Any]:
         MAX_UPLOAD_SIZE_MB = 50
         if len(file_bytes) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
             raise ValueError(f"File '{filename}' exceeds upload size limit of {MAX_UPLOAD_SIZE_MB}MB.")
-        # Note: create_temp_file does not auto-delete. Caller (process_document_async_web) must manage cleanup.
         temp_upload_path = create_temp_file(file_bytes, filename, suffix=os.path.splitext(filename)[1] or '.bin')
         logger.info(f"File '{filename}' uploaded to temp path: '{temp_upload_path}' (Size: {len(file_bytes)} bytes).")
         return {
@@ -551,8 +551,6 @@ def upload_file_web(file_data_base64: str, filename: str) -> Dict[str, Any]:
         logger.error(f"File I/O error during upload of '{filename}': {ioe}", exc_info=True)
         return {'success': False, 'error': f"File system error during upload: {ioe}", 'temp_path': None}
     except Exception as e:
-        # temp_upload_path might not be set if error is early, or create_temp_file might have cleaned it on its own failure.
-        # If it exists here, it means create_temp_file succeeded but something else failed.
         if temp_upload_path and os.path.exists(temp_upload_path): cleanup_temp_file(temp_upload_path)
         logger.error(f"Unexpected error during upload of '{filename}': {e}", exc_info=True)
         return {'success': False, 'error': f"An unexpected error occurred during upload: {e}", 'temp_path': None}

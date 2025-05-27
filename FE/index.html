@@ -654,35 +654,37 @@
             notification.show = true;
             setTimeout(() => notification.show = false, 5000);
         "
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="opacity-0 transform translate-y-2 sm:translate-y-0 sm:translate-x-full"
-             x-transition:enter-end="opacity-100 transform translate-y-0 sm:translate-x-0"
-             x-transition:leave="transition ease-in duration-200"
-             x-transition:leave-start="opacity-100 transform translate-y-0 sm:translate-x-0"
-             x-transition:leave-end="opacity-0 transform translate-y-2 sm:translate-y-0 sm:translate-x-full"
-             class="fixed top-20 sm:top-24 right-4 z-[9990] w-full max-w-sm sm:max-w-md"
-             role="alert" aria-live="assertive" style="display: none;">
+            x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="opacity-0 transform translate-y-2 sm:translate-y-0 sm:translate-x-full"
+            x-transition:enter-end="opacity-100 transform translate-y-0 sm:translate-x-0"
+            x-transition:leave="transition ease-in duration-200"
+            x-transition:leave-start="opacity-100 transform translate-y-0 sm:translate-x-0"
+            x-transition:leave-end="opacity-0 transform translate-y-2 sm:translate-y-0 sm:translate-x-full"
+            class="fixed top-20 sm:top-24 right-4 z-[9990] w-full max-w-sm sm:max-w-md"
+            role="alert" aria-live="assertive" style="display: none;">
             <div class="notification shadow-2xl rounded-lg overflow-hidden border-l-4"
-                 :class="{
+                :class="{
                     'bg-green-50 border-green-500': notification.type === 'success',
                     'bg-red-50 border-red-500': notification.type === 'error',
                     'bg-yellow-50 border-yellow-500': notification.type === 'warning',
                     'bg-blue-50 border-blue-500': notification.type === 'info'
-                 }">
+                }">
                 <div class="p-4">
                     <div class="flex items-start">
                         <div class="flex-shrink-0 mt-0.5">
                             <i class="fas text-xl" 
-                               :class="{
+                            :class="{
                                     'fa-check-circle text-green-500': notification.type === 'success',
                                     'fa-times-circle text-red-500': notification.type === 'error',
                                     'fa-exclamation-triangle text-yellow-500': notification.type === 'warning',
                                     'fa-info-circle text-blue-500': notification.type === 'info'
-                               }"></i>
+                            }"></i>
                         </div>
-                        <div class="ml-3 w-0 flex-1">
-                            <p class="text-base font-semibold text-gray-900" x-text="notification.title"></p>
-                            <p class="mt-1 text-sm text-gray-700" x-text="notification.message"></p>
+                        <div class="ml-3 flex-1" style="background: yellow;">
+                            <div style="display: flex; flex-direction: row; align-items: baseline; background: lightblue;">
+                                <span style="background: lightgreen;" class="font-semibold text-gray-900" x-text="notification.title"></span>
+                                <span style="background: lightcoral; margin-left: 8px;" class="text-sm text-gray-700" x-text="notification.message"></span>
+                            </div>
                         </div>
                         <div class="ml-4 flex-shrink-0">
                             <button @click="notification.show = false" 

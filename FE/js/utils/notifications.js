@@ -150,9 +150,11 @@ const Notifications = {
                     <div class="flex-shrink-0">
                         <i class="${typeConfig.icon} ${typeConfig.color} text-lg"></i>
                     </div>
-                    <div class="ml-3 w-0 flex-1">
-                        <p class="text-sm font-semibold text-gray-900">${notification.html ? notification.title : this.escapeHtml(notification.title)}</p>
-                        <p class="mt-1 text-sm text-gray-600">${notification.html ? notification.message : this.escapeHtml(notification.message)}</p>
+                    <div class="ml-3 flex-1">
+                        <div class="flex items-baseline whitespace-nowrap">
+                            <span class="text-sm font-semibold text-gray-900">${notification.html ? notification.title : this.escapeHtml(notification.title)}</span>
+                            <span class="ml-2 text-sm text-gray-600">${notification.html ? notification.message : this.escapeHtml(notification.message)}</span>
+                        </div>
                         ${this.renderActions(notification.actions)}
                     </div>
                     <div class="ml-4 flex-shrink-0 flex">
