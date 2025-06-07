@@ -17,31 +17,22 @@ if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
 # --- Core Imports ---
-
 try:
-    from BE.core.vision_api import OpenAIVisionClient, describe_image_with_openai_vision
-    VISION_MODULE_AVAILABLE = True
-    logger.info("✅ Vision module imported successfully")
-except ImportError as e:
-    logger.warning(f"⚠️ Vision module not available: {e}")
-    VISION_MODULE_AVAILABLE = False
-
-try:
-    from BE.core.search_thread import SearchThread, search_image_sync
-    from BE.core.document_api import (
+    from core.search_thread import SearchThread, search_image_sync
+    from core.document_api import (
         process_document,
         extract_text_preview,
         extract_text,
         process_batch_synthesis
     )
-    from BE.core.image_processing import process_web_upload, validate_image_upload
-    from BE.core.api_client import validate_api_keys
-    from BE.config.settings import (
+    from core.image_processing import process_web_upload, validate_image_upload
+    from core.api_client import validate_api_keys
+    from config.settings import (
         SERP_API_KEY, IMGUR_CLIENT_ID, DEEPSEEK_API_KEY, GROK_API_KEY,
         CHATGPT_API_KEY, WINDOW_WIDTH, WINDOW_HEIGHT
     )
-    from BE.utils.logger import setup_logger
-    from BE.utils.helpers import ensure_dir_exists
+    from utils.logger import setup_logger
+    from utils.helpers import ensure_dir_exists
     print("✅ All backend imports successful!")
 except ImportError as e:
     print(f"❌ Import Error: {e}")
@@ -138,13 +129,13 @@ def validate_file_path(file_path: str, check_read_access: bool = True) -> bool:
         return False
 
 # ===== INITIALIZATION & CONFIGURATION =====
-def get_app_config():
-    """Enhanced version với vision capabilities"""
+@eel.expose
+def get_app_config() -> Dict[str, Any]:
+    """Retrieves and returns the application's configuration for the frontend."""
     global app_config
     if app_config is None:
         try:
             api_keys_validation = validate_api_keys()
-            
             app_config = {
                 'status': 'ready',
                 'has_serp_api': api_keys_validation.get('has_serp_api', False),
@@ -152,37 +143,20 @@ def get_app_config():
                 'has_deepseek': bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.strip()),
                 'has_grok': bool(GROK_API_KEY and GROK_API_KEY.strip()),
                 'has_chatgpt': bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
-                
-                # NEW: Vision capabilities
-                'has_vision': VISION_MODULE_AVAILABLE and bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
-                'vision_available': VISION_MODULE_AVAILABLE,
-                
                 'supported_formats': ['.pdf', '.docx', '.txt', '.md'],
                 'version': '2.1.0',
                 'ready': api_keys_validation.get('ready', False),
                 'missing_keys': api_keys_validation.get('missing_keys', [])
             }
-            
-            # Add vision-specific missing keys
-            if not app_config['has_vision']:
-                if not VISION_MODULE_AVAILABLE:
-                    app_config['missing_keys'].append('Vision dependencies (openai>=1.10.0)')
-                elif not CHATGPT_API_KEY:
-                    if 'CHATGPT_API_KEY' not in app_config['missing_keys']:
-                        app_config['missing_keys'].append('CHATGPT_API_KEY (for Vision)')
-            
-            logger.info(f"Application configuration loaded. Vision available: {app_config['has_vision']}")
-            
+            logger.info(f"Application configuration loaded. Overall ready: {app_config['ready']}.")
         except Exception as e:
             logger.error(f"Critical error loading application config: {e}", exc_info=True)
             app_config = {
                 'status': 'error', 'error': str(e), 'ready': False,
                 'has_serp_api': False, 'has_imgur': False, 'has_deepseek': False,
-                'has_grok': False, 'has_chatgpt': False, 'has_vision': False,
-                'vision_available': False, 'supported_formats': [],
+                'has_grok': False, 'has_chatgpt': False, 'supported_formats': [],
                 'version': 'N/A', 'missing_keys': ['Configuration load failed']
             }
-    
     return app_config
 
 # ===== IMAGE SEARCH FUNCTIONS =====
@@ -551,360 +525,6 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
     doc_process_thread.start()
     logger.info(f"Asynchronous document processing task started with ID: {process_id} (Input type: {type(file_input)})")
     return process_id
-
-# ===== VISION API ENDPOINTS =====
-
-@eel.expose
-def describe_image_web(image_data_base64: str, 
-                      filename: str,
-                      language: str = "vietnamese",
-                      detail_level: str = "detailed",
-                      custom_prompt: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Web API endpoint cho image description using OpenAI Vision
-    
-    Args:
-        image_data_base64: Base64 encoded image data
-        filename: Original filename for logging
-        language: "vietnamese" hoặc "english"
-        detail_level: "brief", "detailed", "extensive"  
-        custom_prompt: Optional custom prompt override
-        
-    Returns:
-        Dict với description result hoặc error info
-    """
-    try:
-        if not VISION_MODULE_AVAILABLE:
-            return {
-                'success': False,
-                'error': 'Vision module not available. Please install required dependencies.',
-                'description': None
-            }
-        
-        if not image_data_base64 or not filename:
-            raise ValueError("Image data and filename are required")
-        
-        # Validate input parameters
-        if language not in ['vietnamese', 'english']:
-            language = 'vietnamese'  # Default fallback
-            
-        if detail_level not in ['brief', 'detailed', 'extensive']:
-            detail_level = 'detailed'  # Default fallback
-        
-        logger.info(f"Starting vision analysis for '{filename}' (lang: {language}, detail: {detail_level})")
-        
-        # Validate and decode image data
-        try:
-            image_bytes = validate_base64_data(image_data_base64, expected_prefix="data:image")
-        except ValueError as ve:
-            raise ValueError(f"Invalid image data: {ve}")
-        
-        # Check API configuration
-        if not CHATGPT_API_KEY or not CHATGPT_API_KEY.strip():
-            return {
-                'success': False,
-                'error': 'OpenAI API key not configured. Please check your environment settings.',
-                'description': None
-            }
-        
-        # Call vision analysis
-        result = describe_image_with_openai_vision(
-            image_data=image_bytes,
-            filename=filename,
-            language=language,
-            detail_level=detail_level,
-            custom_prompt=custom_prompt
-        )
-        
-        # Log result
-        if result['success']:
-            word_count = result.get('text_metrics', {}).get('word_count', 0)
-            cost = result.get('api_usage', {}).get('cost_estimate', 0)
-            processing_time = result.get('processing_time_seconds', 0)
-            
-            logger.info(f"Vision analysis completed for '{filename}': "
-                       f"{word_count} words, {processing_time:.2f}s, ${cost:.4f}")
-            
-            # Log usage for monitoring
-            try:
-                from monitor_vision_usage import log_vision_usage
-                tokens_used = result.get('api_usage', {}).get('total_tokens', 0)
-                log_vision_usage(tokens_used, cost, filename)
-            except ImportError:
-                pass  # Monitor module optional
-                
-        else:
-            logger.error(f"Vision analysis failed for '{filename}': {result.get('error', 'Unknown error')}")
-        
-        return result
-        
-    except ValueError as ve:
-        logger.error(f"Vision API validation error for '{filename}': {ve}")
-        return {
-            'success': False,
-            'error': str(ve),
-            'description': None,
-            'filename': filename
-        }
-    except Exception as e:
-        logger.error(f"Unexpected error in vision analysis for '{filename}': {e}", exc_info=True)
-        return {
-            'success': False,
-            'error': f"System error: {str(e)}",
-            'description': None,
-            'filename': filename
-        }
-
-
-@eel.expose  
-def describe_image_async_web(image_data_base64: str,
-                           filename: str,
-                           language: str = "vietnamese", 
-                           detail_level: str = "detailed",
-                           custom_prompt: Optional[str] = None) -> str:
-    """
-    Asynchronous version với progress callbacks cho heavy processing
-    
-    Returns:
-        task_id: String identifier để track progress
-    """
-    task_id = f"vision_{int(time.time())}_{threading.get_ident()}"
-    
-    def run_vision_analysis():
-        """Background thread function cho async processing"""
-        try:
-            # Progress: Starting
-            eel.visionProgress(task_id, 5, f"Initializing vision analysis for '{filename}'...")()
-            
-            # Progress: Validating
-            eel.visionProgress(task_id, 15, f"Validating image data for '{filename}'...")()
-            
-            # Progress: Processing
-            eel.visionProgress(task_id, 30, f"Sending '{filename}' to OpenAI Vision API...")()
-            
-            # Actual processing
-            result = describe_image_web(
-                image_data_base64=image_data_base64,
-                filename=filename,
-                language=language,
-                detail_level=detail_level,
-                custom_prompt=custom_prompt
-            )
-            
-            # Progress: Completing
-            eel.visionProgress(task_id, 95, f"Finalizing results for '{filename}'...")()
-            
-            # Send final result
-            if result['success']:
-                eel.visionProgress(task_id, 100, f"Vision analysis completed successfully for '{filename}'")()
-                eel.visionComplete(task_id, result)()
-            else:
-                eel.visionProgress(task_id, 100, f"Vision analysis failed for '{filename}'")()
-                eel.visionError(task_id, "Analysis Failed", result['error'])()
-                
-        except Exception as e:
-            error_msg = f"Vision analysis thread failed for '{filename}': {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            
-            try:
-                eel.visionProgress(task_id, 100, f"System error processing '{filename}'")()
-                eel.visionError(task_id, "System Error", error_msg)()
-            except Exception as eel_err:
-                logger.error(f"Failed to send error callback for vision task {task_id}: {eel_err}")
-        finally:
-            # Cleanup
-            active_processing_tasks.pop(task_id, None)
-    
-    # Start background thread
-    vision_thread = threading.Thread(target=run_vision_analysis, daemon=True, name=f"VisionAnalysis-{filename}")
-    active_processing_tasks[task_id] = vision_thread
-    vision_thread.start()
-    
-    logger.info(f"Async vision analysis started for '{filename}' with task ID: {task_id}")
-    return task_id
-
-
-@eel.expose
-def get_vision_capabilities() -> Dict[str, Any]:
-    """
-    Get current vision API capabilities và configuration status
-    """
-    try:
-        capabilities = {
-            'available': VISION_MODULE_AVAILABLE,
-            'api_configured': bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
-            'supported_languages': ['vietnamese', 'english'],
-            'detail_levels': ['brief', 'detailed', 'extensive'],
-            'supported_formats': ['JPEG', 'PNG', 'GIF', 'WEBP', 'BMP'],
-            'max_image_size_mb': 20,
-            'optimal_image_size_mb': 5,
-            'estimated_cost_range': {
-                'brief': '$0.001 - $0.003',
-                'detailed': '$0.003 - $0.008', 
-                'extensive': '$0.008 - $0.015'
-            }
-        }
-        
-        if VISION_MODULE_AVAILABLE and capabilities['api_configured']:
-            # Test client initialization
-            try:
-                from core.vision_api import OpenAIVisionClient
-                test_client = OpenAIVisionClient(CHATGPT_API_KEY)
-                usage_stats = test_client.get_usage_stats()
-                capabilities['usage_stats'] = usage_stats
-                capabilities['status'] = 'ready'
-            except Exception as e:
-                capabilities['status'] = 'error'
-                capabilities['error'] = str(e)
-                logger.warning(f"Vision capability check failed: {e}")
-        else:
-            capabilities['status'] = 'not_configured'
-            if not VISION_MODULE_AVAILABLE:
-                capabilities['error'] = 'Vision module dependencies not installed'
-            else:
-                capabilities['error'] = 'OpenAI API key not configured'
-        
-        return capabilities
-        
-    except Exception as e:
-        logger.error(f"Error checking vision capabilities: {e}", exc_info=True)
-        return {
-            'available': False,
-            'status': 'error',
-            'error': f"Capability check failed: {str(e)}"
-        }
-
-
-@eel.expose
-def batch_describe_images_web(image_files: List[Dict[str, str]], 
-                             settings: Dict[str, Any]) -> str:
-    """
-    Batch process multiple images cho vision analysis
-    
-    Args:
-        image_files: List of {file_data: base64, filename: str}
-        settings: {language, detail_level, custom_prompt}
-        
-    Returns:
-        batch_task_id: String để track batch progress
-    """
-    batch_task_id = f"vision_batch_{int(time.time())}_{len(image_files)}"
-    
-    def run_batch_vision_analysis():
-        """Background processing cho batch images"""
-        try:
-            total_files = len(image_files)
-            results = []
-            
-            eel.visionBatchProgress(batch_task_id, 0, f"Starting batch analysis of {total_files} images...")()
-            
-            for i, image_file in enumerate(image_files):
-                try:
-                    progress = int((i / total_files) * 90)  # Reserve 10% for finalization
-                    filename = image_file.get('filename', f'image_{i+1}')
-                    
-                    eel.visionBatchProgress(batch_task_id, progress, f"Processing {filename} ({i+1}/{total_files})")()
-                    
-                    # Process individual image
-                    result = describe_image_web(
-                        image_data_base64=image_file['file_data'],
-                        filename=filename,
-                        language=settings.get('language', 'vietnamese'),
-                        detail_level=settings.get('detail_level', 'detailed'),
-                        custom_prompt=settings.get('custom_prompt')
-                    )
-                    
-                    results.append({
-                        'filename': filename,
-                        'result': result,
-                        'index': i
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"Error processing image {i+1} in batch: {e}")
-                    results.append({
-                        'filename': image_file.get('filename', f'image_{i+1}'),
-                        'result': {
-                            'success': False,
-                            'error': f"Batch processing error: {str(e)}",
-                            'description': None
-                        },
-                        'index': i
-                    })
-            
-            # Finalize batch
-            eel.visionBatchProgress(batch_task_id, 95, "Finalizing batch results...")()
-            
-            # Calculate batch statistics
-            successful = sum(1 for r in results if r['result']['success'])
-            failed = total_files - successful
-            total_cost = sum(r['result'].get('api_usage', {}).get('cost_estimate', 0) 
-                           for r in results if r['result']['success'])
-            
-            batch_summary = {
-                'total_files': total_files,
-                'successful': successful,
-                'failed': failed,
-                'total_cost': total_cost,
-                'results': results,
-                'settings': settings,
-                'completed_at': time.time()
-            }
-            
-            eel.visionBatchProgress(batch_task_id, 100, f"Batch completed: {successful}/{total_files} successful")()
-            eel.visionBatchComplete(batch_task_id, batch_summary)()
-            
-        except Exception as e:
-            error_msg = f"Batch vision analysis failed: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            eel.visionBatchError(batch_task_id, "Batch Processing Error", error_msg)()
-        finally:
-            active_processing_tasks.pop(batch_task_id, None)
-    
-    # Start batch processing thread
-    batch_thread = threading.Thread(target=run_batch_vision_analysis, daemon=True, name=f"VisionBatch-{len(image_files)}")
-    active_processing_tasks[batch_task_id] = batch_thread
-    batch_thread.start()
-    
-    logger.info(f"Batch vision analysis started for {len(image_files)} images with task ID: {batch_task_id}")
-    return batch_task_id
-
-
-@eel.expose
-def cancel_vision_task(task_id: str) -> Dict[str, Any]:
-    """
-    Cancel running vision task (if possible)
-    """
-    try:
-        if task_id in active_processing_tasks:
-            thread = active_processing_tasks[task_id]
-            if thread.is_alive():
-                # Note: Python threads can't be forcefully cancelled
-                # We can only mark them for cleanup
-                logger.info(f"Marking vision task {task_id} for cancellation")
-                # The thread will cleanup when it finishes current operation
-                return {
-                    'success': True,
-                    'message': f'Task {task_id} marked for cancellation'
-                }
-            else:
-                active_processing_tasks.pop(task_id, None)
-                return {
-                    'success': True,
-                    'message': f'Task {task_id} was already completed'
-                }
-        else:
-            return {
-                'success': False,
-                'error': f'Task {task_id} not found'
-            }
-    except Exception as e:
-        logger.error(f"Error cancelling vision task {task_id}: {e}")
-        return {
-            'success': False,
-            'error': f'Cancellation failed: {str(e)}'
-        }
-
 
 # ===== FILE HANDLING & PREVIEWS (Web Exposed) =====
 @eel.expose

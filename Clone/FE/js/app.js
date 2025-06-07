@@ -8,28 +8,6 @@ function app() {
         loadingMessage: '',
         searchTerm: '',
 
-        // ===== NEW VISION STATE =====
-        visionCapabilities: {
-            available: false,
-            apiConfigured: false,
-            supportedLanguages: ['vietnamese', 'english'],
-            detailLevels: ['brief', 'detailed', 'extensive']
-        },
-        
-        visionSettings: {
-            language: 'vietnamese',
-            detailLevel: 'detailed',
-            autoAnalyze: false
-        },
-        
-        visionState: {
-            isAnalyzing: false,
-            progress: 0,
-            status: '',
-            result: null,
-            taskId: null
-        },
-
         // ===== IMAGE SEARCH STATE =====
         searchOptions: {
             socialOnly: false
@@ -87,7 +65,7 @@ function app() {
         },
 
         // ===== INITIALIZATION =====
-        async initApp() {
+        initApp() {
             console.log('🚀 Enhanced Toolkit v2.0 - Initializing Alpine.js app...');
             this.addLogEntry('info', 'Application initializing...');
 
@@ -100,28 +78,23 @@ function app() {
                 eel.expose(this.handleEelSearchComplete.bind(this), 'searchComplete');
                 eel.expose(this.handleEelSearchError.bind(this), 'searchError');
 
-                // NEW: Vision callbacks
-                eel.expose(this.handleVisionProgress.bind(this), 'visionProgress');
-                eel.expose(this.handleVisionComplete.bind(this), 'visionComplete');
-                eel.expose(this.handleVisionError.bind(this), 'visionError');
-
-                this.addLogEntry('info', 'Eel callbacks exposed to Python (including Vision).');
+                this.addLogEntry('info', 'Eel callbacks exposed to Python.');
             } else {
                 this.addLogEntry('warning', 'Eel is not defined. Running in offline/demo mode.');
             }
 
-            try {
-                await this.loadAppConfig();
-                await this.initVisionCapabilities(); // NEW: Initialize vision
-                this.setupEventListeners();
-                this.addLogEntry('info', 'Application initialized successfully.');
-                this.statusMessage = 'Ready';
-            } catch (error) {
-                console.error('Initialization error:', error);
-                this.showNotification('error', 'Initialization Error', `Failed to initialize application: ${error.message}`);
-                this.addLogEntry('error', `Initialization failed: ${error.message}`);
-                this.statusMessage = 'Initialization Error';
-            }
+            this.loadAppConfig()
+                .then(() => {
+                    this.setupEventListeners();
+                    this.addLogEntry('info', 'Application initialized successfully.');
+                    this.statusMessage = 'Ready';
+                })
+                .catch(error => {
+                    console.error('Initialization error:', error);
+                    this.showNotification('error', 'Initialization Error', `Failed to initialize application: ${error.message}`);
+                    this.addLogEntry('error', `Initialization failed: ${error.message}`);
+                    this.statusMessage = 'Initialization Error';
+                });
         },
 
         async loadAppConfig() {
@@ -203,10 +176,6 @@ function app() {
                 this.searchResults = [];
                 this.addLogEntry('success', `Image '${file.name}' loaded and ready for search.`);
                 this.showNotification('success', 'Image Loaded', `${file.name} is ready to search.`);
-                if (this.visionSettings.autoAnalyze && this.visionCapabilities.available) {
-                    await this.delay(500); // Small delay for UX
-                    this.analyzeImageWithVision();
-                }
             } catch (error) {
                 this.addLogEntry('error', `Image processing failed for ${file.name}: ${error.message}`);
                 this.showNotification('error', 'Image Processing Error', error.message);
@@ -290,170 +259,6 @@ function app() {
             this.isSearching = false; this.searchProgress = 0;
         },
 
-        // ===== VISION METHODS =====
-        async initVisionCapabilities() {
-            try {
-                if (typeof eel !== 'undefined') {
-                    const capabilities = await eel.get_vision_capabilities()();
-                    this.visionCapabilities = { ...this.visionCapabilities, ...capabilities };
-                    
-                    this.addLogEntry('info', `Vision capabilities loaded. Available: ${capabilities.available}, Configured: ${capabilities.api_configured}`);
-                    
-                    if (!capabilities.available) {
-                        this.addLogEntry('warning', 'Vision module not available. Install openai>=1.10.0');
-                    } else if (!capabilities.api_configured) {
-                        this.addLogEntry('warning', 'OpenAI API key not configured for Vision analysis');
-                    }
-                } else {
-                    // Demo mode
-                    this.visionCapabilities.available = true;
-                    this.visionCapabilities.apiConfigured = true;
-                    this.addLogEntry('info', '[DEMO] Vision capabilities simulated');
-                }
-            } catch (error) {
-                this.addLogEntry('error', `Failed to load vision capabilities: ${error.message}`);
-            }
-        },
-
-        async analyzeImageWithVision() {
-            if (!this.selectedImage || !this.visionCapabilities.available || this.visionState.isAnalyzing) {
-                if (!this.visionCapabilities.available) {
-                    this.showNotification('warning', 'Vision Not Available', 'Vision analysis requires OpenAI API configuration.');
-                }
-                return;
-            }
-
-            this.visionState.isAnalyzing = true;
-            this.visionState.progress = 0;
-            this.visionState.result = null;
-            this.visionState.status = 'Preparing image for analysis...';
-
-            this.addLogEntry('info', `Starting vision analysis for '${this.selectedImage.name}' (${this.visionSettings.language}, ${this.visionSettings.detailLevel})`);
-
-            try {
-                if (typeof eel !== 'undefined') {
-                    // Use async version for better UX
-                    const taskId = await eel.describe_image_async_web(
-                        this.selectedImage.data,
-                        this.selectedImage.name,
-                        this.visionSettings.language,
-                        this.visionSettings.detailLevel
-                    )();
-                    
-                    this.visionState.taskId = taskId;
-                    this.addLogEntry('info', `Vision analysis started with task ID: ${taskId}`);
-                } else {
-                    // Demo mode
-                    await this.runDemoVisionAnalysis();
-                }
-            } catch (error) {
-                this.handleVisionError('Vision Analysis Failed', error.message || 'Unknown error occurred');
-            }
-        },
-
-        async runDemoVisionAnalysis() {
-            const steps = [
-                { progress: 10, message: 'Demo: Validating image...' },
-                { progress: 30, message: 'Demo: Sending to OpenAI Vision...' },
-                { progress: 60, message: 'Demo: Analyzing image content...' },
-                { progress: 90, message: 'Demo: Generating description...' },
-                { progress: 100, message: 'Demo: Analysis complete!' }
-            ];
-
-            for (const step of steps) {
-                await this.delay(800 + Math.random() * 400);
-                this.handleVisionProgress('demo_task', step.progress, step.message);
-            }
-
-            // Mock result
-            const mockResult = {
-                success: true,
-                description: `[DEMO] Hình ảnh này cho thấy một ${this.selectedImage.name.includes('car') ? 'chiếc xe hơi' : 'đối tượng'} trong khung cảnh đẹp mắt. Ảnh có màu sắc tươi sáng và composition tốt, tạo cảm giác thú vị cho người xem.`,
-                language: this.visionSettings.language,
-                detail_level: this.visionSettings.detailLevel,
-                text_metrics: {
-                    word_count: 45,
-                    char_count: 198,
-                    sentence_count: 3
-                },
-                processing_time_seconds: 2.3,
-                api_usage: {
-                    cost_estimate: 0.005,
-                    total_tokens: 150
-                },
-                image_metadata: {
-                    format: 'JPEG',
-                    size: [800, 600],
-                    file_size_mb: 1.2
-                },
-                filename: this.selectedImage.name
-            };
-
-            this.handleVisionComplete('demo_task', mockResult);
-        },
-
-        handleVisionProgress(taskId, percent, message) {
-            if (this.visionState.taskId === taskId || taskId.startsWith('demo')) {
-                this.visionState.progress = Math.max(0, Math.min(100, percent));
-                this.visionState.status = message;
-                this.addLogEntry('info', `[Vision ${taskId}] ${percent}% - ${message}`);
-            }
-        },
-
-        handleVisionComplete(taskId, result) {
-            if (this.visionState.taskId === taskId || taskId.startsWith('demo')) {
-                this.visionState.result = ImageVision.formatVisionResult(result);
-                this.visionState.isAnalyzing = false;
-                this.visionState.progress = 100;
-                this.visionState.status = 'Analysis completed successfully';
-                
-                const wordCount = result.text_metrics?.word_count || 0;
-                const cost = result.api_usage?.cost_estimate || 0;
-                
-                this.addLogEntry('success', `Vision analysis completed for '${result.filename}': ${wordCount} words, $${cost.toFixed(4)}`);
-                this.showNotification('success', 'Vision Analysis Complete', `Generated ${wordCount} word description for ${result.filename}`);
-            }
-        },
-
-        handleVisionError(taskId, errorTitle, errorMessage) {
-            this.visionState.isAnalyzing = false;
-            this.visionState.progress = 0;
-            this.visionState.status = `Error: ${errorMessage}`;
-            this.visionState.result = { error: errorMessage };
-            
-            this.addLogEntry('error', `Vision analysis failed: ${errorTitle} - ${errorMessage}`);
-            this.showNotification('error', errorTitle, errorMessage);
-        },
-
-        copyVisionDescription() {
-            if (this.visionState.result && this.visionState.result.description) {
-                this.copyToClipboard(this.visionState.result.description)
-                    .then(() => {
-                        this.showNotification('success', 'Copied', 'Vision description copied to clipboard');
-                        this.addLogEntry('info', 'Vision description copied to clipboard');
-                    })
-                    .catch(error => {
-                        this.showNotification('error', 'Copy Failed', 'Could not copy to clipboard');
-                        this.addLogEntry('error', `Copy failed: ${error.message}`);
-                    });
-            }
-        },
-
-        exportVisionResult() {
-            if (this.visionState.result && this.visionState.result.description) {
-                const filename = this.selectedImage?.name?.replace(/\.[^/.]+$/, "") || 'vision_analysis';
-                ImageVision.exportVisionResult(this.visionState.result, filename);
-                this.addLogEntry('info', `Vision result exported for ${filename}`);
-            }
-        },
-
-        clearVisionResult() {
-            this.visionState.result = null;
-            this.visionState.progress = 0;
-            this.visionState.status = '';
-            this.addLogEntry('info', 'Vision analysis result cleared');
-        },
-
         // ===== DOCUMENT PROCESSING METHODS =====
         handleDocumentDrop(event) {
             const files = Array.from(event.dataTransfer.files);
@@ -472,8 +277,6 @@ function app() {
             };
             input.click();
         },
-
-        
 
         async addFilesToQueue(files) {
             this.isLoading = true; this.loadingTitle = 'Adding Files';
