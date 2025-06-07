@@ -7,51 +7,65 @@ import tempfile
 import threading
 import time
 import traceback 
+import requests # Import requests for URL fetching
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 
 # --- Backend Path Setup ---
+# Ensures the 'BE' directory is in the Python path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
 backend_path = os.path.join(current_dir, 'BE')
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-# --- Core Imports ---
+# --- Initialize Logger First ---
+# It's crucial to have the logger ready before any other modules use it.
+from BE.utils.logger import setup_logger
+logger = setup_logger()
 
-try:
-    from BE.core.vision_api import OpenAIVisionClient, describe_image_with_openai_vision
-    VISION_MODULE_AVAILABLE = True
-    logger.info("✅ Vision module imported successfully")
-except ImportError as e:
-    logger.warning(f"⚠️ Vision module not available: {e}")
-    VISION_MODULE_AVAILABLE = False
+# --- Module Availability Flags ---
+# These flags help the app gracefully handle missing optional features.
+VISION_MODULE_AVAILABLE = False
 
+# --- Core Backend Imports ---
+# This structured import helps diagnose issues more easily.
 try:
-    from BE.core.search_thread import SearchThread, search_image_sync
+    from BE.utils.helpers import ensure_dir_exists
+    from BE.config.settings import (
+        SERP_API_KEY, IMGUR_CLIENT_ID, DEEPSEEK_API_KEY, GROK_API_KEY,
+        CHATGPT_API_KEY, WINDOW_WIDTH, WINDOW_HEIGHT
+    )
+    from BE.core.api_client import validate_api_keys
+    from BE.core.search_thread import search_image_sync
     from BE.core.document_api import (
         process_document,
         extract_text_preview,
         extract_text,
         process_batch_synthesis
     )
-    from BE.core.image_processing import process_web_upload, validate_image_upload
-    from BE.core.api_client import validate_api_keys
-    from BE.config.settings import (
-        SERP_API_KEY, IMGUR_CLIENT_ID, DEEPSEEK_API_KEY, GROK_API_KEY,
-        CHATGPT_API_KEY, WINDOW_WIDTH, WINDOW_HEIGHT
-    )
-    from BE.utils.logger import setup_logger
-    from BE.utils.helpers import ensure_dir_exists
-    print("✅ All backend imports successful!")
+    from BE.core.image_processing import validate_image_upload
+    logger.info("✅ Core modules imported successfully.")
 except ImportError as e:
-    print(f"❌ Import Error: {e}")
-    print("Ensure all backend modules (BE directory) are correctly placed and have no internal errors.")
-    sys.exit(1)
+    logger.critical(f"❌ Failed to import a core backend module: {e}", exc_info=True)
+    # This is a fatal error, so we should exit.
+    sys.exit(f"Core module import failed: {e}")
+
+# --- Vision Module Import (Optional) ---
+# This is kept separate because it's a new, non-essential feature.
+try:
+    from BE.core.vision_api import OpenAIVisionClient, describe_image_with_openai_vision
+    VISION_MODULE_AVAILABLE = True
+    logger.info("✅ Vision module imported successfully.")
+except ImportError as e:
+    logger.warning(f"⚠️ Vision module not available. Image description will be disabled. Error: {e}")
+    # Define placeholder functions if the module is missing
+    def describe_image_with_openai_vision(*args, **kwargs):
+        return {'success': False, 'error': 'Vision module not installed on the server.'}
+    VISION_MODULE_AVAILABLE = False
+
 
 # --- Globals & Initialization ---
-logger = setup_logger()
 eel.init('FE')
-
 active_searches: Dict[str, threading.Thread] = {}
 active_processing_tasks: Dict[str, threading.Thread] = {}
 app_config: Optional[Dict[str, Any]] = None
@@ -137,9 +151,11 @@ def validate_file_path(file_path: str, check_read_access: bool = True) -> bool:
         logger.debug(f"Error validating file path '{file_path}': {e}")
         return False
 
-# ===== INITIALIZATION & CONFIGURATION =====
+# ===== EEL EXPOSED FUNCTIONS =====
+
+@eel.expose
 def get_app_config():
-    """Enhanced version với vision capabilities"""
+    """Enhanced version with vision capabilities check."""
     global app_config
     if app_config is None:
         try:
@@ -152,22 +168,18 @@ def get_app_config():
                 'has_deepseek': bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.strip()),
                 'has_grok': bool(GROK_API_KEY and GROK_API_KEY.strip()),
                 'has_chatgpt': bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
-                
-                # NEW: Vision capabilities
                 'has_vision': VISION_MODULE_AVAILABLE and bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
                 'vision_available': VISION_MODULE_AVAILABLE,
-                
                 'supported_formats': ['.pdf', '.docx', '.txt', '.md'],
-                'version': '2.1.0',
+                'version': '2.3.0-url',
                 'ready': api_keys_validation.get('ready', False),
                 'missing_keys': api_keys_validation.get('missing_keys', [])
             }
             
-            # Add vision-specific missing keys
             if not app_config['has_vision']:
                 if not VISION_MODULE_AVAILABLE:
-                    app_config['missing_keys'].append('Vision dependencies (openai>=1.10.0)')
-                elif not CHATGPT_API_KEY:
+                    app_config['missing_keys'].append('Vision dependencies (e.g., openai>=1.10.0)')
+                elif not (CHATGPT_API_KEY and CHATGPT_API_KEY.strip()):
                     if 'CHATGPT_API_KEY' not in app_config['missing_keys']:
                         app_config['missing_keys'].append('CHATGPT_API_KEY (for Vision)')
             
@@ -185,7 +197,62 @@ def get_app_config():
     
     return app_config
 
-# ===== IMAGE SEARCH FUNCTIONS =====
+@eel.expose
+def get_vision_capabilities() -> Dict[str, Any]:
+    """Get current vision API capabilities and configuration status."""
+    try:
+        capabilities = {
+            'available': VISION_MODULE_AVAILABLE,
+            'api_configured': bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
+            'supported_languages': ['vietnamese', 'english'],
+            'detail_levels': ['brief', 'detailed', 'extensive'],
+        }
+        return capabilities
+    except Exception as e:
+        logger.error(f"Error checking vision capabilities: {e}", exc_info=True)
+        return {
+            'available': False,
+            'api_configured': False,
+            'error': f"Capability check failed: {str(e)}"
+        }
+
+@eel.expose
+def process_image_from_url(url: str) -> Dict[str, Any]:
+    """Downloads an image from a URL, validates it, and prepares it for the app."""
+    logger.info(f"Processing image from URL: {url}")
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, stream=True, timeout=15)
+        response.raise_for_status()
+
+        content_type = response.headers.get('content-type', '').lower()
+        if 'image' not in content_type:
+            return {'success': False, 'error': f"URL did not point to a direct image. Content type was '{content_type}'."}
+
+        image_bytes = response.content
+        validation = validate_image_upload(image_bytes)
+        if not validation['valid']:
+             return {'success': False, 'error': f"Invalid image from URL: {validation['error']}"}
+
+        filename = os.path.basename(url.split('?')[0]) or "downloaded_image.jpg"
+        
+        # Prepare data for the frontend, similar to a file upload
+        base64_data = base64.b64encode(image_bytes).decode('utf-8')
+        return {
+            'success': True,
+            'name': filename,
+            'size': len(image_bytes),
+            'data': f"data:{content_type};base64,{base64_data}"
+        }
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error fetching image from URL {url}: {e}", exc_info=True)
+        return {'success': False, 'error': f"Network error: Could not fetch image from URL."}
+    except Exception as e:
+        logger.error(f"Unexpected error processing image URL {url}: {e}", exc_info=True)
+        return {'success': False, 'error': f"An unexpected error occurred: {e}"}
+
+
 @eel.expose
 def search_image_web(image_data_base64: str, filename: str, social_media_only: bool = False) -> Dict[str, Any]:
     """Handles image search requests from the web UI."""
@@ -223,36 +290,71 @@ def search_image_web(image_data_base64: str, filename: str, social_media_only: b
     finally:
         if temp_image_path: cleanup_temp_file(temp_image_path)
 
+def _run_async_search_task(task_id: str, *args, **kwargs):
+    """Wrapper specifically for search tasks."""
+    try:
+        eel.searchProgress(task_id, 20, "Uploading and preparing image...")
+        result_dict = search_image_web(*args, **kwargs)
+        eel.searchProgress(task_id, 100, "Search complete.")
+        if result_dict.get('success'):
+            eel.searchComplete(task_id, result_dict['results'])()
+        else:
+            eel.searchError(task_id, "Search Operation Failed", result_dict.get('error', 'Unknown Error'))()
+    except Exception as e:
+        logger.error(f"Async search task thread for ID {task_id} failed: {e}", exc_info=True)
+        eel.searchError(task_id, "System Error in Search Thread", str(e))()
+    finally:
+        active_searches.pop(task_id, None)
+
+def _run_async_vision_task(task_id: str, *args, **kwargs):
+    """Wrapper specifically for vision tasks."""
+    try:
+        eel.visionProgress(task_id, 15, "Validating and preparing image...")()
+        eel.visionProgress(task_id, 40, "Sending image to AI for analysis...")()
+        result_dict = describe_image_web(*args, **kwargs)
+        eel.visionProgress(task_id, 90, "Processing AI response...")()
+        if result_dict.get('success'):
+            eel.visionComplete(task_id, result_dict)()
+        else:
+            eel.visionError(task_id, "Vision Analysis Failed", result_dict.get('error', 'Unknown Error'))()
+    except Exception as e:
+        logger.error(f"Async vision task thread for ID {task_id} failed: {e}", exc_info=True)
+        eel.visionError(task_id, "System Error in Vision Thread", str(e))()
+    finally:
+        active_processing_tasks.pop(task_id, None)
+
+
 @eel.expose
 def search_image_async_web(image_data_base64: str, filename: str, social_media_only: bool = False) -> str:
-    """Starts an asynchronous image search operation."""
-    search_id = f"search_{int(time.time())}_{threading.get_ident()}"
-    def run_search_in_thread():
-        def progress_update(percent, message):
-            if eel: eel.searchProgress(search_id, percent, message)()
-        try:
-            progress_update(0, f"Starting async search for {filename}...")
-            result_dict = search_image_web(image_data_base64, filename, social_media_only)
-            if result_dict['success']:
-                progress_update(100, f"Search for {filename} complete. Found {result_dict['total']} results.")
-                eel.searchComplete(search_id, result_dict['results'])()
-            else:
-                progress_update(100, f"Search for {filename} failed: {result_dict['error']}")
-                eel.searchError(search_id, "Search Operation Failed", result_dict['error'])()
-        except Exception as e:
-            logger.error(f"Async image search thread for {filename} (ID: {search_id}) failed: {e}", exc_info=True)
-            try:
-                progress_update(100, f"System error during search for {filename}.")
-                eel.searchError(search_id, "System Error in Search Thread", str(e))()
-            except Exception as eel_err: logger.error(f"Failed to send error to frontend for search ID {search_id}: {eel_err}")
-        finally: active_searches.pop(search_id, None)
-    search_thread = threading.Thread(target=run_search_in_thread, daemon=True)
-    active_searches[search_id] = search_thread
-    search_thread.start()
-    logger.info(f"Asynchronous image search started for '{filename}' with ID: {search_id}")
+    search_id = f"search_{int(time.time())}"
+    thread = threading.Thread(target=_run_async_search_task, args=(search_id, image_data_base64, filename, social_media_only))
+    active_searches[search_id] = thread
+    thread.start()
     return search_id
 
-# ===== DOCUMENT PROCESSING FUNCTIONS =====
+@eel.expose
+def describe_image_web(image_data_base64: str, filename: str, language: str = "vietnamese", detail_level: str = "detailed", custom_prompt: Optional[str] = None) -> Dict[str, Any]:
+    """Web API endpoint for image description using OpenAI Vision."""
+    if not VISION_MODULE_AVAILABLE:
+        return {'success': False, 'error': 'Vision module not available on the server.', 'description': None}
+    
+    try:
+        image_bytes = validate_base64_data(image_data_base64, "data:image")
+        result = describe_image_with_openai_vision(image_bytes, filename, language, detail_level, custom_prompt)
+        return result
+    except Exception as e:
+        logger.error(f"Error in describe_image_web for '{filename}': {e}", exc_info=True)
+        return {'success': False, 'error': f"System error: {e}", 'description': None}
+
+@eel.expose  
+def describe_image_async_web(image_data_base64: str, filename: str, language: str = "vietnamese", detail_level: str = "detailed", custom_prompt: Optional[str] = None) -> str:
+    """Asynchronous version for vision tasks."""
+    task_id = f"vision_{int(time.time())}"
+    thread = threading.Thread(target=_run_async_vision_task, args=(task_id, image_data_base64, filename, language, detail_level, custom_prompt))
+    active_processing_tasks[task_id] = thread
+    thread.start()
+    return task_id
+
 def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
     """Validates and normalizes document processing settings received from the frontend."""
     normalized_settings: Dict[str, Any] = {}
@@ -260,7 +362,6 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
         ai_models_selection = settings_from_frontend.get('ai_models', {})
         if not isinstance(ai_models_selection, dict): ai_models_selection = {}
         
-        # Fixed: Always use API keys if they exist and model is selected
         normalized_settings['deepseek_key'] = DEEPSEEK_API_KEY if safe_bool(ai_models_selection.get('deepseek', False)) else None
         normalized_settings['grok_key'] = GROK_API_KEY if safe_bool(ai_models_selection.get('grok', False)) else None
         normalized_settings['chatgpt_key'] = CHATGPT_API_KEY if safe_bool(ai_models_selection.get('chatgpt', False)) else None
@@ -297,12 +398,6 @@ def get_document_text_on_upload(file_data_base64: str, filename: str) -> Dict[st
         char_count = len(extracted_text_content) if extracted_text_content else 0
         logger.info(f"Successfully extracted {char_count} characters for preview from '{filename}'.")
         return {'success': True, 'text_content': extracted_text_content or "", 'filename': filename}
-    except ValueError as ve:
-        logger.warning(f"Validation error during text preview for '{filename}': {ve}")
-        return {'success': False, 'error': str(ve), 'text_content': ""}
-    except IOError as ioe:
-        logger.error(f"File I/O error during text preview for '{filename}': {ioe}", exc_info=True)
-        return {'success': False, 'error': f"File system error: {ioe}", 'text_content': ""}
     except Exception as e:
         logger.error(f"Unexpected error extracting text preview for '{filename}': {e}", exc_info=True)
         return {'success': False, 'error': f"Extraction error: {e}", 'text_content': ""}
@@ -320,21 +415,9 @@ def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, A
         logger.info(f"Starting single document processing for '{file_basename}' (Path: {doc_file_path}).")
         normalized_processing_settings = validate_processing_settings(current_settings)
 
-        is_single_doc_synthesis = normalized_processing_settings.pop('is_synthesis_task', False)
-
-        if not any(normalized_processing_settings.get(key) for key in ['deepseek_key', 'grok_key', 'chatgpt_key']):
-            logger.warning(f"No AI models configured/enabled for '{file_basename}'. Only text analysis if extraction succeeds.")
-
-        processing_result = process_document(
-            file_path=doc_file_path,
-            is_synthesis_task=is_single_doc_synthesis,
-            **normalized_processing_settings
-        )
-
-        if not processing_result or not isinstance(processing_result, dict):
-            raise SystemError(f"Core document processing for '{file_basename}' returned an invalid result.")
-        logger.info(f"Single document processing completed for '{file_basename}'.")
-
+        processing_result = process_document(**normalized_processing_settings, file_path=doc_file_path)
+        
+        # This formatting logic should be consistent everywhere
         ai_results_output = []
         for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
             content = processing_result.get(model_key)
@@ -344,6 +427,7 @@ def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, A
         
         overall_error_message = processing_result.get('error')
         has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output if isinstance(res, dict))
+        
         return {
             'success': not bool(overall_error_message),
             'original_text': processing_result.get('original_text', ''),
@@ -352,561 +436,106 @@ def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, A
             'error': overall_error_message,
             'has_errors': has_any_errors
         }
-    except ValueError as ve:
-        logger.error(f"Input validation error processing document '{file_basename}': {ve}", exc_info=False)
-        return {'success': False, 'error': str(ve), 'original_text': '', 'ai_results': [], 'analysis': {}, 'has_errors': True}
-    except SystemError as se:
-        logger.error(f"System error processing document '{file_basename}': {se}", exc_info=True)
-        return {'success': False, 'error': str(se), 'original_text': '', 'ai_results': [], 'analysis': {}, 'has_errors': True}
     except Exception as e:
-        logger.error(f"Unexpected error processing document '{file_basename}': {e}", exc_info=True)
+        logger.error(f"Unexpected error in process_document_web for '{file_basename}': {e}", exc_info=True)
         return {'success': False, 'error': f"An unexpected error occurred: {e}", 'original_text': '', 'ai_results': [], 'analysis': {}, 'has_errors': True}
 
-@eel.expose
-def process_documents_batch_web(temp_file_paths: List[str], settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
-    """Processes a batch of documents (specified by their temporary file paths) for synthesis."""
-    num_docs = len(temp_file_paths)
-    logger.info(f"Received request to process a batch of {num_docs} documents.")
-    if not temp_file_paths:
-        return {'success': False, 'error': "No file paths provided for batch processing.", 'ai_results': [], 'processed_files': [], 'failed_files': []}
-    try:
-        valid_paths_for_batch = []
-        failed_file_validations = []
-        for i, path in enumerate(temp_file_paths):
-            if validate_file_path(path):
-                valid_paths_for_batch.append(path)
-            else:
-                filename = os.path.basename(path) if path else f"UnknownFile_{i}"
-                failed_file_validations.append((filename, "Invalid or inaccessible path"))
-                logger.warning(f"Invalid path in batch: '{path}' for file '{filename}'. Skipping.")
-
-        if not valid_paths_for_batch:
-            return {'success': False, 'error': "None of the provided file paths were valid for batch processing.", 'ai_results': [], 'processed_files': [], 'failed_files': failed_file_validations}
-
-        current_settings = settings_from_frontend if isinstance(settings_from_frontend, dict) else {}
-        normalized_settings = validate_processing_settings(current_settings)
-
-        batch_result = process_batch_synthesis(
-            file_paths=valid_paths_for_batch,
-            deepseek_key=normalized_settings.get('deepseek_key'),
-            grok_key=normalized_settings.get('grok_key'),
-            chatgpt_key=normalized_settings.get('chatgpt_key'),
-            summary_level=normalized_settings.get('summary_level', 50),
-            target_language_code=normalized_settings.get('target_language_code')
-        )
-
-        ai_batch_syntheses = []
-        for model_key_suffix, model_name in [('_synthesis', 'DeepSeek'), ('_synthesis', 'Grok'), ('_synthesis', 'ChatGPT')]:
-            full_model_key = model_name.lower().replace(" ", "") + model_key_suffix
-            content = batch_result.get(full_model_key)
-            if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
-                is_error_msg = isinstance(content, str) and "Error:" in content
-                ai_batch_syntheses.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
-
-        overall_batch_error = batch_result.get('overall_error')
-        has_any_batch_errors = bool(overall_batch_error) or any(res.get('is_error') for res in ai_batch_syntheses if isinstance(res, dict))
-
-        logger.info(f"Batch synthesis processing completed for {len(valid_paths_for_batch)} valid documents.")
-        return {
-            'success': not bool(overall_batch_error),
-            'ai_results': ai_batch_syntheses,
-            'processed_files': batch_result.get('processed_files', []),
-            'failed_files': batch_result.get('failed_files', []) + failed_file_validations,
-            'concatenated_text_char_count': batch_result.get('concatenated_text_char_count', 0),
-            'error': overall_batch_error,
-            'has_errors': has_any_batch_errors
-        }
-    except Exception as e:
-        logger.error(f"Unexpected error during batch document processing: {e}", exc_info=True)
-        return {
-            'success': False, 'error': f"An unexpected error occurred during batch processing: {e}",
-            'ai_results': [], 'processed_files': [],
-            'failed_files': [(os.path.basename(p) if p else "Unknown", "Batch system error") for p in temp_file_paths],
-            'has_errors': True
-        }
 
 @eel.expose
 def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[str, Any]]], settings: Dict[str, Any]) -> str:
-    """Starts an asynchronous document processing task (single file, batch files, or direct text)."""
+    """Correctly starts and handles asynchronous document processing."""
     process_id = f"doc_process_{int(time.time())}_{threading.get_ident()}"
 
     def run_doc_processing_in_thread():
         temp_file_for_this_task: Optional[str] = None
         temp_files_for_batch: List[str] = []
         log_filename = "document_processing_task"
-        result_dict: Dict[str, Any] = {}
+        final_result_for_frontend: Dict[str, Any] = {}
 
         try:
+            eel.processingProgress(process_id, 5, "Initializing processing...")()
             normalized_settings = validate_processing_settings(settings)
-            is_batch_mode_from_settings = normalized_settings.get('is_synthesis_task', False)
+            
+            raw_processing_result: Dict[str, Any] = {}
 
-            is_batch_operation = isinstance(file_input, list)
-
-            if is_batch_operation:
-                if not all(isinstance(item, dict) and 'file_data' in item and 'filename' in item for item in file_input):
-                    raise ValueError("For batch mode, 'file_input' must be a list of {file_data, filename} dictionaries.")
-                
+            if isinstance(file_input, list): # BATCH PROCESSING
                 log_filename = f"{len(file_input)} documents in batch"
-                eel.processingProgress(process_id, 5, f"Preparing batch: {log_filename}...")()
-                
-                failed_uploads = []
+                eel.processingProgress(process_id, 10, f"Uploading {log_filename}...")()
                 for i, item_dict in enumerate(file_input):
-                    eel.processingProgress(process_id, 10 + int(i/len(file_input)*20), f"Uploading {item_dict.get('filename','file ' + str(i+1))}...")()
+                    eel.processingProgress(process_id, 10 + int(i / len(file_input) * 15), f"Uploading {item_dict.get('filename', 'file ' + str(i+1))}...")()
                     upload_resp = upload_file_web(item_dict['file_data'], item_dict['filename'])
-                    if upload_resp['success'] and upload_resp['temp_path']:
-                        temp_files_for_batch.append(upload_resp['temp_path'])
-                    else:
-                        failed_uploads.append(item_dict.get('filename','file ' + str(i+1)))
+                    if not upload_resp['success']: raise IOError(f"Upload failed for {item_dict['filename']}")
+                    temp_files_for_batch.append(upload_resp['temp_path'])
                 
-                if failed_uploads:
-                    raise IOError(f"Upload failed for some files in batch: {', '.join(failed_uploads)}")
-                if not temp_files_for_batch:
-                    raise ValueError("No files successfully uploaded for batch processing.")
-                
-                eel.processingProgress(process_id, 30, f"Starting backend batch processing for {log_filename}...")()
-                result_dict = process_documents_batch_web(temp_files_for_batch, settings)
+                eel.processingProgress(process_id, 30, "Starting batch synthesis...")()
+                raw_processing_result = process_documents_batch_web(temp_files_for_batch, settings)
 
-            elif isinstance(file_input, dict) and 'direct_text_content' in file_input:
-                log_filename = file_input.get('text_input_name', 'Direct Text Input')
-                text_content_to_process = file_input['direct_text_content']
-                eel.processingProgress(process_id, 5, f"Preparing to process direct text: {log_filename}...")()
-                if not text_content_to_process or not text_content_to_process.strip():
-                    raise ValueError("Direct text input cannot be empty.")
+                # Format batch result for frontend
+                ai_results_output = []
+                for model_key, model_name in [('deepseek_synthesis', 'DeepSeek'), ('grok_synthesis', 'Grok'), ('chatgpt_synthesis', 'ChatGPT')]:
+                    content = raw_processing_result.get(model_key)
+                    if content:
+                         is_error_msg = isinstance(content, str) and ("Error:" in content)
+                         ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
                 
-                eel.processingProgress(process_id, 30, f"Starting backend processing for {log_filename}...")()
+                final_result_for_frontend = {
+                    'success': not bool(raw_processing_result.get('overall_error')),
+                    'ai_results': ai_results_output,
+                    **raw_processing_result
+                }
+
+
+            else: # SINGLE ITEM PROCESSING (File or Text)
+                if isinstance(file_input, dict) and 'direct_text_content' in file_input:
+                    log_filename = file_input.get('text_input_name', 'Direct Text Input')
+                    eel.processingProgress(process_id, 20, f"Processing direct text: {log_filename}...")()
+                    raw_processing_result = process_document(input_text_to_process=file_input['direct_text_content'], **normalized_settings)
+                else: 
+                    file_data = file_input['file_data']
+                    log_filename = file_input['filename']
+                    eel.processingProgress(process_id, 15, f"Uploading {log_filename}...")()
+                    upload_resp = upload_file_web(file_data, log_filename)
+                    if not upload_resp['success']: raise IOError(f"Upload failed for {log_filename}")
+                    temp_file_for_this_task = upload_resp['temp_path']
+                    eel.processingProgress(process_id, 30, f"Processing file: {log_filename}...")()
+                    raw_processing_result = process_document(file_path=temp_file_for_this_task, **normalized_settings)
                 
-                # Call process_document from document_api
-                raw_result = process_document(
-                    input_text_to_process=text_content_to_process,
-                    file_path=None,
-                    is_synthesis_task=normalized_settings.get('is_synthesis_task', False),
-                    deepseek_key=normalized_settings.get('deepseek_key'),
-                    grok_key=normalized_settings.get('grok_key'),
-                    chatgpt_key=normalized_settings.get('chatgpt_key'),
-                    summary_level=normalized_settings.get('summary_level', 50),
-                    target_language_code=normalized_settings.get('target_language_code')
-                )
-                
-                # Transform to expected frontend format
+                # Format single item result for frontend - THIS WAS THE MISSING STEP
                 ai_results_output = []
                 for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
-                    content = raw_result.get(model_key)
-                    if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
+                    content = raw_processing_result.get(model_key)
+                    if content is not None:
                         is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
                         ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
                 
-                overall_error_message = raw_result.get('error')
-                has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output if isinstance(res, dict))
+                overall_error_message = raw_processing_result.get('error')
+                has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output)
                 
-                result_dict = {
+                final_result_for_frontend = {
                     'success': not bool(overall_error_message),
-                    'original_text': raw_result.get('original_text', ''),
+                    'original_text': raw_processing_result.get('original_text', ''),
                     'ai_results': ai_results_output,
-                    'analysis': raw_result.get('analysis', {}),
+                    'analysis': raw_processing_result.get('analysis', {}),
                     'error': overall_error_message,
                     'has_errors': has_any_errors
                 }
 
-            elif isinstance(file_input, str):
-                log_filename = os.path.basename(file_input)
-                eel.processingProgress(process_id, 5, f"Preparing to process file: {log_filename}...")()
-                result_dict = process_document_web(file_input, settings)
-
-            elif isinstance(file_input, dict) and 'file_data' in file_input and 'filename' in file_input:
-                log_filename = file_input['filename']
-                eel.processingProgress(process_id, 10, f"Uploading {log_filename} for processing...")()
-                upload_resp = upload_file_web(file_input['file_data'], log_filename)
-                if not upload_resp['success'] or not upload_resp['temp_path']:
-                    raise IOError(f"Upload failed for async processing of '{log_filename}': {upload_resp.get('error', 'Unknown upload error')}")
-                temp_file_for_this_task = upload_resp['temp_path']
-                eel.processingProgress(process_id, 30, f"Starting backend processing for {log_filename}...")()
-                result_dict = process_document_web(temp_file_for_this_task, settings)
-                
-            else:
-                raise ValueError(
-                    "Invalid 'file_input' type. Expected path string, {file_data, filename} dict for single file, "
-                    "a list of such dicts for batch, or {direct_text_content, text_input_name} for direct text."
-                )
 
             eel.processingProgress(process_id, 100, f"Finalizing results for {log_filename}...")()
-            eel.processingComplete(process_id, result_dict)()
+            eel.processingComplete(process_id, final_result_for_frontend)()
         except Exception as e:
             logger.error(f"Async document processing for '{log_filename}' (ID: {process_id}) failed in thread: {e}", exc_info=True)
-            try:
-                eel.processingError(process_id, f"Error processing '{log_filename}': {str(e)}")()
-            except Exception as eel_err:
-                 logger.error(f"Failed to send error to frontend for doc process ID {process_id}: {eel_err}")
+            eel.processingError(process_id, f"Error processing '{log_filename}': {str(e)}")()
         finally:
-            if temp_file_for_this_task:
-                cleanup_temp_file(temp_file_for_this_task)
-            if temp_files_for_batch:
-                logger.info(f"Async batch task {process_id} finished. Cleaning up {len(temp_files_for_batch)} temp files from batch upload.")
-                for path_to_clean in temp_files_for_batch:
-                    cleanup_temp_file(path_to_clean)
-            
+            if temp_file_for_this_task: cleanup_temp_file(temp_file_for_this_task)
+            for path_to_clean in temp_files_for_batch: cleanup_temp_file(path_to_clean)
             active_processing_tasks.pop(process_id, None)
 
     doc_process_thread = threading.Thread(target=run_doc_processing_in_thread, daemon=True)
     active_processing_tasks[process_id] = doc_process_thread
     doc_process_thread.start()
-    logger.info(f"Asynchronous document processing task started with ID: {process_id} (Input type: {type(file_input)})")
     return process_id
 
-# ===== VISION API ENDPOINTS =====
-
-@eel.expose
-def describe_image_web(image_data_base64: str, 
-                      filename: str,
-                      language: str = "vietnamese",
-                      detail_level: str = "detailed",
-                      custom_prompt: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Web API endpoint cho image description using OpenAI Vision
-    
-    Args:
-        image_data_base64: Base64 encoded image data
-        filename: Original filename for logging
-        language: "vietnamese" hoặc "english"
-        detail_level: "brief", "detailed", "extensive"  
-        custom_prompt: Optional custom prompt override
-        
-    Returns:
-        Dict với description result hoặc error info
-    """
-    try:
-        if not VISION_MODULE_AVAILABLE:
-            return {
-                'success': False,
-                'error': 'Vision module not available. Please install required dependencies.',
-                'description': None
-            }
-        
-        if not image_data_base64 or not filename:
-            raise ValueError("Image data and filename are required")
-        
-        # Validate input parameters
-        if language not in ['vietnamese', 'english']:
-            language = 'vietnamese'  # Default fallback
-            
-        if detail_level not in ['brief', 'detailed', 'extensive']:
-            detail_level = 'detailed'  # Default fallback
-        
-        logger.info(f"Starting vision analysis for '{filename}' (lang: {language}, detail: {detail_level})")
-        
-        # Validate and decode image data
-        try:
-            image_bytes = validate_base64_data(image_data_base64, expected_prefix="data:image")
-        except ValueError as ve:
-            raise ValueError(f"Invalid image data: {ve}")
-        
-        # Check API configuration
-        if not CHATGPT_API_KEY or not CHATGPT_API_KEY.strip():
-            return {
-                'success': False,
-                'error': 'OpenAI API key not configured. Please check your environment settings.',
-                'description': None
-            }
-        
-        # Call vision analysis
-        result = describe_image_with_openai_vision(
-            image_data=image_bytes,
-            filename=filename,
-            language=language,
-            detail_level=detail_level,
-            custom_prompt=custom_prompt
-        )
-        
-        # Log result
-        if result['success']:
-            word_count = result.get('text_metrics', {}).get('word_count', 0)
-            cost = result.get('api_usage', {}).get('cost_estimate', 0)
-            processing_time = result.get('processing_time_seconds', 0)
-            
-            logger.info(f"Vision analysis completed for '{filename}': "
-                       f"{word_count} words, {processing_time:.2f}s, ${cost:.4f}")
-            
-            # Log usage for monitoring
-            try:
-                from monitor_vision_usage import log_vision_usage
-                tokens_used = result.get('api_usage', {}).get('total_tokens', 0)
-                log_vision_usage(tokens_used, cost, filename)
-            except ImportError:
-                pass  # Monitor module optional
-                
-        else:
-            logger.error(f"Vision analysis failed for '{filename}': {result.get('error', 'Unknown error')}")
-        
-        return result
-        
-    except ValueError as ve:
-        logger.error(f"Vision API validation error for '{filename}': {ve}")
-        return {
-            'success': False,
-            'error': str(ve),
-            'description': None,
-            'filename': filename
-        }
-    except Exception as e:
-        logger.error(f"Unexpected error in vision analysis for '{filename}': {e}", exc_info=True)
-        return {
-            'success': False,
-            'error': f"System error: {str(e)}",
-            'description': None,
-            'filename': filename
-        }
-
-
-@eel.expose  
-def describe_image_async_web(image_data_base64: str,
-                           filename: str,
-                           language: str = "vietnamese", 
-                           detail_level: str = "detailed",
-                           custom_prompt: Optional[str] = None) -> str:
-    """
-    Asynchronous version với progress callbacks cho heavy processing
-    
-    Returns:
-        task_id: String identifier để track progress
-    """
-    task_id = f"vision_{int(time.time())}_{threading.get_ident()}"
-    
-    def run_vision_analysis():
-        """Background thread function cho async processing"""
-        try:
-            # Progress: Starting
-            eel.visionProgress(task_id, 5, f"Initializing vision analysis for '{filename}'...")()
-            
-            # Progress: Validating
-            eel.visionProgress(task_id, 15, f"Validating image data for '{filename}'...")()
-            
-            # Progress: Processing
-            eel.visionProgress(task_id, 30, f"Sending '{filename}' to OpenAI Vision API...")()
-            
-            # Actual processing
-            result = describe_image_web(
-                image_data_base64=image_data_base64,
-                filename=filename,
-                language=language,
-                detail_level=detail_level,
-                custom_prompt=custom_prompt
-            )
-            
-            # Progress: Completing
-            eel.visionProgress(task_id, 95, f"Finalizing results for '{filename}'...")()
-            
-            # Send final result
-            if result['success']:
-                eel.visionProgress(task_id, 100, f"Vision analysis completed successfully for '{filename}'")()
-                eel.visionComplete(task_id, result)()
-            else:
-                eel.visionProgress(task_id, 100, f"Vision analysis failed for '{filename}'")()
-                eel.visionError(task_id, "Analysis Failed", result['error'])()
-                
-        except Exception as e:
-            error_msg = f"Vision analysis thread failed for '{filename}': {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            
-            try:
-                eel.visionProgress(task_id, 100, f"System error processing '{filename}'")()
-                eel.visionError(task_id, "System Error", error_msg)()
-            except Exception as eel_err:
-                logger.error(f"Failed to send error callback for vision task {task_id}: {eel_err}")
-        finally:
-            # Cleanup
-            active_processing_tasks.pop(task_id, None)
-    
-    # Start background thread
-    vision_thread = threading.Thread(target=run_vision_analysis, daemon=True, name=f"VisionAnalysis-{filename}")
-    active_processing_tasks[task_id] = vision_thread
-    vision_thread.start()
-    
-    logger.info(f"Async vision analysis started for '{filename}' with task ID: {task_id}")
-    return task_id
-
-
-@eel.expose
-def get_vision_capabilities() -> Dict[str, Any]:
-    """
-    Get current vision API capabilities và configuration status
-    """
-    try:
-        capabilities = {
-            'available': VISION_MODULE_AVAILABLE,
-            'api_configured': bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
-            'supported_languages': ['vietnamese', 'english'],
-            'detail_levels': ['brief', 'detailed', 'extensive'],
-            'supported_formats': ['JPEG', 'PNG', 'GIF', 'WEBP', 'BMP'],
-            'max_image_size_mb': 20,
-            'optimal_image_size_mb': 5,
-            'estimated_cost_range': {
-                'brief': '$0.001 - $0.003',
-                'detailed': '$0.003 - $0.008', 
-                'extensive': '$0.008 - $0.015'
-            }
-        }
-        
-        if VISION_MODULE_AVAILABLE and capabilities['api_configured']:
-            # Test client initialization
-            try:
-                from core.vision_api import OpenAIVisionClient
-                test_client = OpenAIVisionClient(CHATGPT_API_KEY)
-                usage_stats = test_client.get_usage_stats()
-                capabilities['usage_stats'] = usage_stats
-                capabilities['status'] = 'ready'
-            except Exception as e:
-                capabilities['status'] = 'error'
-                capabilities['error'] = str(e)
-                logger.warning(f"Vision capability check failed: {e}")
-        else:
-            capabilities['status'] = 'not_configured'
-            if not VISION_MODULE_AVAILABLE:
-                capabilities['error'] = 'Vision module dependencies not installed'
-            else:
-                capabilities['error'] = 'OpenAI API key not configured'
-        
-        return capabilities
-        
-    except Exception as e:
-        logger.error(f"Error checking vision capabilities: {e}", exc_info=True)
-        return {
-            'available': False,
-            'status': 'error',
-            'error': f"Capability check failed: {str(e)}"
-        }
-
-
-@eel.expose
-def batch_describe_images_web(image_files: List[Dict[str, str]], 
-                             settings: Dict[str, Any]) -> str:
-    """
-    Batch process multiple images cho vision analysis
-    
-    Args:
-        image_files: List of {file_data: base64, filename: str}
-        settings: {language, detail_level, custom_prompt}
-        
-    Returns:
-        batch_task_id: String để track batch progress
-    """
-    batch_task_id = f"vision_batch_{int(time.time())}_{len(image_files)}"
-    
-    def run_batch_vision_analysis():
-        """Background processing cho batch images"""
-        try:
-            total_files = len(image_files)
-            results = []
-            
-            eel.visionBatchProgress(batch_task_id, 0, f"Starting batch analysis of {total_files} images...")()
-            
-            for i, image_file in enumerate(image_files):
-                try:
-                    progress = int((i / total_files) * 90)  # Reserve 10% for finalization
-                    filename = image_file.get('filename', f'image_{i+1}')
-                    
-                    eel.visionBatchProgress(batch_task_id, progress, f"Processing {filename} ({i+1}/{total_files})")()
-                    
-                    # Process individual image
-                    result = describe_image_web(
-                        image_data_base64=image_file['file_data'],
-                        filename=filename,
-                        language=settings.get('language', 'vietnamese'),
-                        detail_level=settings.get('detail_level', 'detailed'),
-                        custom_prompt=settings.get('custom_prompt')
-                    )
-                    
-                    results.append({
-                        'filename': filename,
-                        'result': result,
-                        'index': i
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"Error processing image {i+1} in batch: {e}")
-                    results.append({
-                        'filename': image_file.get('filename', f'image_{i+1}'),
-                        'result': {
-                            'success': False,
-                            'error': f"Batch processing error: {str(e)}",
-                            'description': None
-                        },
-                        'index': i
-                    })
-            
-            # Finalize batch
-            eel.visionBatchProgress(batch_task_id, 95, "Finalizing batch results...")()
-            
-            # Calculate batch statistics
-            successful = sum(1 for r in results if r['result']['success'])
-            failed = total_files - successful
-            total_cost = sum(r['result'].get('api_usage', {}).get('cost_estimate', 0) 
-                           for r in results if r['result']['success'])
-            
-            batch_summary = {
-                'total_files': total_files,
-                'successful': successful,
-                'failed': failed,
-                'total_cost': total_cost,
-                'results': results,
-                'settings': settings,
-                'completed_at': time.time()
-            }
-            
-            eel.visionBatchProgress(batch_task_id, 100, f"Batch completed: {successful}/{total_files} successful")()
-            eel.visionBatchComplete(batch_task_id, batch_summary)()
-            
-        except Exception as e:
-            error_msg = f"Batch vision analysis failed: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            eel.visionBatchError(batch_task_id, "Batch Processing Error", error_msg)()
-        finally:
-            active_processing_tasks.pop(batch_task_id, None)
-    
-    # Start batch processing thread
-    batch_thread = threading.Thread(target=run_batch_vision_analysis, daemon=True, name=f"VisionBatch-{len(image_files)}")
-    active_processing_tasks[batch_task_id] = batch_thread
-    batch_thread.start()
-    
-    logger.info(f"Batch vision analysis started for {len(image_files)} images with task ID: {batch_task_id}")
-    return batch_task_id
-
-
-@eel.expose
-def cancel_vision_task(task_id: str) -> Dict[str, Any]:
-    """
-    Cancel running vision task (if possible)
-    """
-    try:
-        if task_id in active_processing_tasks:
-            thread = active_processing_tasks[task_id]
-            if thread.is_alive():
-                # Note: Python threads can't be forcefully cancelled
-                # We can only mark them for cleanup
-                logger.info(f"Marking vision task {task_id} for cancellation")
-                # The thread will cleanup when it finishes current operation
-                return {
-                    'success': True,
-                    'message': f'Task {task_id} marked for cancellation'
-                }
-            else:
-                active_processing_tasks.pop(task_id, None)
-                return {
-                    'success': True,
-                    'message': f'Task {task_id} was already completed'
-                }
-        else:
-            return {
-                'success': False,
-                'error': f'Task {task_id} not found'
-            }
-    except Exception as e:
-        logger.error(f"Error cancelling vision task {task_id}: {e}")
-        return {
-            'success': False,
-            'error': f'Cancellation failed: {str(e)}'
-        }
-
-
-# ===== FILE HANDLING & PREVIEWS (Web Exposed) =====
 @eel.expose
 def upload_file_web(file_data_base64: str, filename: str) -> Dict[str, Any]:
     """Handles file uploads, saves to temp, returns path for further backend use."""
@@ -914,71 +543,16 @@ def upload_file_web(file_data_base64: str, filename: str) -> Dict[str, Any]:
     try:
         if not file_data_base64 or not filename:
             raise ValueError("File data or filename is missing for upload.")
-        if len(filename) > 255:
-            raise ValueError("Filename is too long (max 255 characters).")
-        logger.info(f"Processing upload request for file: '{filename}'.")
         file_bytes = validate_base64_data(file_data_base64)
-        MAX_UPLOAD_SIZE_MB = 50
-        if len(file_bytes) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-            raise ValueError(f"File '{filename}' exceeds upload size limit of {MAX_UPLOAD_SIZE_MB}MB.")
         temp_upload_path = create_temp_file(file_bytes, filename, suffix=os.path.splitext(filename)[1] or '.bin')
-        logger.info(f"File '{filename}' uploaded to temp path: '{temp_upload_path}' (Size: {len(file_bytes)} bytes).")
         return {
             'success': True, 'temp_path': temp_upload_path,
             'size': len(file_bytes), 'filename': os.path.basename(temp_upload_path)
         }
-    except ValueError as ve:
-        logger.warning(f"Upload validation error for '{filename}': {ve}")
-        return {'success': False, 'error': str(ve), 'temp_path': None}
-    except IOError as ioe:
-        logger.error(f"File I/O error during upload of '{filename}': {ioe}", exc_info=True)
-        return {'success': False, 'error': f"File system error during upload: {ioe}", 'temp_path': None}
     except Exception as e:
-        if temp_upload_path and os.path.exists(temp_upload_path): cleanup_temp_file(temp_upload_path)
-        logger.error(f"Unexpected error during upload of '{filename}': {e}", exc_info=True)
-        return {'success': False, 'error': f"An unexpected error occurred during upload: {e}", 'temp_path': None}
-
-@eel.expose
-def get_document_preview(doc_file_path: str, max_chars: int = 1000) -> Dict[str, Any]:
-    """Generates a short text preview for a document at the given path."""
-    file_basename = os.path.basename(doc_file_path) if doc_file_path else "Unknown Document"
-    try:
-        if not validate_file_path(doc_file_path):
-            raise ValueError(f"Invalid or inaccessible path for document preview: {doc_file_path}")
-        max_preview_chars = safe_int(max_chars, default=1000, min_val=100, max_val=5000)
-        preview_content = extract_text_preview(doc_file_path, max_preview_chars)
-        logger.info(f"Generated preview for '{file_basename}' (max {max_preview_chars} chars).")
-        return {'success': True, 'preview': preview_content or f"No preview could be extracted from '{file_basename}'."}
-    except ValueError as ve:
-        logger.warning(f"Preview generation validation error for '{file_basename}': {ve}")
-        return {'success': False, 'error': str(ve), 'preview': ''}
-    except Exception as e:
-        logger.error(f"Unexpected error generating preview for '{file_basename}': {e}", exc_info=True)
-        return {'success': False, 'error': f"Error generating preview: {e}", 'preview': ''}
-
-# ===== SYSTEM STATUS & UTILITIES (Web Exposed) =====
-@eel.expose
-def get_system_status() -> Dict[str, Any]:
-    """Provides a snapshot of the system's status to the frontend."""
-    try:
-        temp_dir = 'temp'; temp_files_on_disk = 0
-        if os.path.exists(temp_dir) and os.path.isdir(temp_dir):
-            temp_files_on_disk = len([f for f in os.listdir(temp_dir) if os.path.isfile(os.path.join(temp_dir, f))])
-        live_searches = sum(1 for t in active_searches.values() if t.is_alive())
-        live_processing = sum(1 for t in active_processing_tasks.values() if t.is_alive())
-        return {
-            'success': True, 'active_searches': live_searches, 'active_processing_tasks': live_processing,
-            'temp_files_on_disk': temp_files_on_disk, 'python_version': sys.version.split()[0],
-            'working_directory': os.getcwd(),
-            'eel_server_port': eel.SERVER_PORT if hasattr(eel, 'SERVER_PORT') else 'N/A',
-            'backend_loaded': True
-        }
-    except Exception as e:
-        logger.error(f"Failed to retrieve system status: {e}", exc_info=True)
-        return {
-            'success': False, 'error': str(e), 'active_searches': 0,
-            'active_processing_tasks': 0, 'temp_files_on_disk': 0, 'backend_loaded': False
-        }
+        if temp_upload_path: cleanup_temp_file(temp_upload_path)
+        logger.error(f"Error during upload of '{filename}': {e}", exc_info=True)
+        return {'success': False, 'error': f"Upload error: {e}", 'temp_path': None}
 
 @eel.expose
 def perform_cleanup_temp_files() -> Dict[str, Any]:
@@ -986,11 +560,13 @@ def perform_cleanup_temp_files() -> Dict[str, Any]:
     temp_dir_path = 'temp'; cleaned_files_count = 0; errors_list = []
     try:
         logger.info(f"Initiating cleanup of temporary files in '{temp_dir_path}'.")
-        if os.path.exists(temp_dir_path) and os.path.isdir(temp_dir_path):
+        if os.path.isdir(temp_dir_path):
             for item_name in os.listdir(temp_dir_path):
                 item_path = os.path.join(temp_dir_path, item_name)
                 if os.path.isfile(item_path):
-                    try: os.unlink(item_path); cleaned_files_count += 1
+                    try:
+                        os.unlink(item_path)
+                        cleaned_files_count += 1
                     except Exception as e_file:
                         err_detail = f"Could not delete temp file '{item_path}': {e_file}"
                         logger.warning(err_detail); errors_list.append(err_detail)
@@ -999,113 +575,39 @@ def perform_cleanup_temp_files() -> Dict[str, Any]:
             logger.info(message)
             return {'success': True, 'cleaned_count': cleaned_files_count, 'errors': errors_list}
         else:
-            logger.info(f"Temporary directory '{temp_dir_path}' not found. No files to clean.")
             return {'success': True, 'cleaned_count': 0, 'errors': [], 'message': "Temp directory not found."}
     except Exception as e_main:
         logger.error(f"Major error during temporary files cleanup: {e_main}", exc_info=True)
         return {'success': False, 'error': str(e_main), 'cleaned_count': 0, 'errors': [str(e_main)]}
 
-@eel.expose
-def save_user_settings(settings_map: Dict[str, Any]) -> Dict[str, Any]:
-    """Saves user preferences to a JSON file."""
-    settings_file = 'user_settings.json'
-    try:
-        if not isinstance(settings_map, dict):
-            raise ValueError("Invalid settings format: input must be a dictionary.")
-        with open(settings_file, 'w', encoding='utf-8') as f:
-            json.dump(settings_map, f, indent=4, ensure_ascii=False)
-        logger.info(f"User settings successfully saved to '{settings_file}'.")
-        return {'success': True, 'message': 'Settings saved.'}
-    except ValueError as ve:
-        logger.error(f"Failed to save settings due to invalid data: {ve}", exc_info=False)
-        return {'success': False, 'error': str(ve)}
-    except Exception as e:
-        logger.error(f"Failed to save user settings to '{settings_file}': {e}", exc_info=True)
-        return {'success': False, 'error': f"Could not save settings: {e}"}
-
-@eel.expose
-def load_user_settings() -> Dict[str, Any]:
-    """Loads user preferences from a JSON file."""
-    settings_file = 'user_settings.json'
-    try:
-        if os.path.isfile(settings_file):
-            with open(settings_file, 'r', encoding='utf-8') as f: loaded_data = json.load(f)
-            if not isinstance(loaded_data, dict):
-                raise TypeError("Settings file content is not a valid JSON object (dictionary).")
-            logger.info(f"User settings loaded from '{settings_file}'.")
-            return {'success': True, 'settings': loaded_data}
-        else:
-            logger.info(f"User settings file '{settings_file}' not found. Returning empty defaults.")
-            return {'success': True, 'settings': {}}
-    except (json.JSONDecodeError, TypeError) as json_err:
-        logger.error(f"Error decoding settings file '{settings_file}': {json_err}", exc_info=True)
-        return {'success': False, 'error': f"Settings file is corrupted or invalid: {json_err}", 'settings': {}}
-    except Exception as e:
-        logger.error(f"Failed to load user settings from '{settings_file}': {e}", exc_info=True)
-        return {'success': False, 'error': f"Could not load settings: {e}", 'settings': {}}
 
 # ===== APPLICATION STARTUP LOGIC =====
 def start_app():
     """Initializes and starts the Eel-based web application."""
     try:
-        ensure_dir_exists('temp'); ensure_dir_exists('logs')
-        initial_app_config = get_app_config()
-        logger.info(f"🚀 Enhanced Toolkit v{initial_app_config.get('version', 'N/A')} starting with Python {sys.version.split()[0]}...")
-        logger.info(f"Initial configuration status: {initial_app_config.get('status', 'unknown')}. API readiness: {initial_app_config.get('ready', False)}.")
-        if not initial_app_config.get('ready', False):
-            missing_api_keys = initial_app_config.get('missing_keys', [])
-            if missing_api_keys: logger.warning(f"⚠️ Application may operate in a limited mode. Essential API keys missing: {', '.join(missing_api_keys)}")
-            else: logger.warning("⚠️ Application readiness check failed, but no specific missing keys reported. Check config.")
-        if not try_start_browser():
-            logger.critical("❌ Application launch failed after all attempts. Please review logs.")
-            input("Press Enter to exit..."); sys.exit(1)
+        ensure_dir_exists('temp')
+        ensure_dir_exists('logs')
+        
+        initial_config = get_app_config()
+        logger.info(f"🚀 Enhanced Toolkit v{initial_config.get('version', 'N/A')} starting...")
+        if not initial_config.get('ready', False) or not initial_config.get('has_serp_api'):
+            logger.warning(f"⚠️ App may operate in limited mode. Missing keys: {initial_config.get('missing_keys', [])}")
+
+        eel_start_options = {
+            'size': (WINDOW_WIDTH, WINDOW_HEIGHT), 'position': (50, 50),
+            'disable_cache': True, 'port': 0, 'host': 'localhost'
+        }
+        
+        # This starts the web server and opens the browser
+        eel.start('index.html', mode='chrome', **eel_start_options)
+
+    except (IOError, OSError) as e:
+        logger.critical(f"❌ Failed to start. A browser (like Chrome) is required. Error: {e}", exc_info=True)
+        print("\n--- BROWSER NOT FOUND ---\nCould not find Google Chrome. Please install it or try starting the app with a different browser mode.\n")
     except Exception as e:
         logger.critical(f"❌ Fatal error during application startup: {e}", exc_info=True)
-        input("Press Enter to exit..."); sys.exit(1)
+        print(f"\n--- FATAL ERROR ---\nAn unexpected error occurred: {e}\nCheck the latest log file in the 'logs' directory for details.")
 
-def try_start_browser() -> bool:
-    """Attempts to start Eel with various browser modes, falling back to server-only."""
-    eel_start_options = {
-        'size': (WINDOW_WIDTH, WINDOW_HEIGHT), 'position': (50, 50),
-        'disable_cache': True, 'port': 0, 'host': 'localhost'
-    }
-    browser_preferences = [
-        {'mode': 'chrome', 'name': 'Google Chrome/Chromium'}, {'mode': 'edge', 'name': 'Microsoft Edge'},
-        {'mode': 'brave', 'name': 'Brave Browser'},
-    ]
-    for browser_pref in browser_preferences:
-        try:
-            logger.info(f"🌐 Attempting to launch with {browser_pref['name']}...")
-            eel.start('index.html', mode=browser_pref['mode'], **eel_start_options)
-            logger.info(f"✅ Successfully launched with {browser_pref['name']}. Application is running.")
-            return True
-        except Exception as e:
-            logger.debug(f"❌ Failed to launch with {browser_pref['name']} (mode: {browser_pref['mode']}): {e}. Trying next...")
-            time.sleep(0.2)
-    logger.info("🌐 Attempting to launch with system default HTML handler (Eel 'default' mode)...")
-    try:
-        eel_default_options = eel_start_options.copy(); eel_default_options.pop('position', None)
-        eel.start('index.html', mode='default', **eel_default_options)
-        server_port = eel.SERVER_PORT if hasattr(eel, 'SERVER_PORT') else eel_start_options['port']
-        logger.info(f"✅ Launched with system default handler. Access at http://{eel_start_options['host']}:{server_port}")
-        input("🚀 Enhanced Toolkit is running! Press Enter to stop server and exit...")
-        return True
-    except Exception as e: logger.error(f"❌ Failed to launch with system default HTML handler: {e}")
-    logger.warning("⚠️ Could not automatically open the application in a browser window.")
-    server_port_fallback = eel_start_options['port'] if eel_start_options['port'] != 0 else 8000
-    logger.info(f"💡 Starting in server-only mode. Please manually open your browser to: http://{eel_start_options['host']}:{server_port_fallback}")
-    try:
-        eel_server_only_options = {k: v for k, v in eel_start_options.items() if k not in ['size', 'position']}
-        eel_server_only_options['port'] = server_port_fallback
-        eel.start('index.html', mode=None, block=True, **eel_server_only_options)
-        logger.info("✅ Server has been stopped.")
-        return True
-    except Exception as e:
-        logger.critical(f"❌ Failed to start in server-only mode: {e}", exc_info=True)
-        return False
 
 if __name__ == '__main__':
-    if '--debug-early' in sys.argv:
-        logger.setLevel("DEBUG")
-        logger.info("🐛 Early debug mode enabled via command line.")
     start_app()
