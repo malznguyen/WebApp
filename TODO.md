@@ -4,11 +4,11 @@
     "- [ ] Tóm tắt nội dung theo số lượng từ (100; 200…) _(Thời gian: 1 ngày)_",
     "- [x] Dịch qua lại đa ngôn ngữ (Anh, Việt, Nhật…) _(Đã hoàn thành)_",
     "- [ ] Tra thông tin metadata của file đầu vào _(Thời gian: 2 tuần) — Cần nghiên cứu thêm_",
-    "- [ ] Xem nguồn đăng tương tự với bài viết đó _(Thời gian: 2 tuần)_",
+    "- [x] Xem nguồn đăng tương tự với bài viết đó _(Thời gian: 2 tuần)_",
     "",
     "## 📷 Phần mềm tìm kiếm ảnh/ video",
     "- [ ] Nhập đầu vào là một URL dẫn đến ảnh _(Thời gian: 1 tuần)_",
     "- [ ] Tra thông tin cơ bản của ảnh đó _(Thời gian: 1.5 tuần)_",
-    "- [ ] Mô tả được ảnh đó sang dạng word _(Thời gian: 1 ngày)_",
+    "- [x] Mô tả được ảnh đó sang dạng word _(Thời gian: 1 ngày)_",
     "- [ ] Kiểm tra xem ảnh đó có phải là ảnh fake không _(Thời gian: 1 ngày)_",
-    "- [ ] Tìm được nguồn ảnh tương tự _(Thời gian: 1 ngày) — API có thể đã hết hạn_"
+    "- [x] Tìm được nguồn ảnh tương tự _(Thời gian: 1 ngày) — API có thể đã hết hạn_"
