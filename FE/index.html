@@ -123,9 +123,52 @@
                             </div>
                         </div>
                     </div>
+
+                    <div x-show="selectedImage && visionCapabilities.available" class="card p-4">
+                        <h4 class="font-medium text-gray-900 mb-3 flex items-center">
+                            <i class="fas fa-eye mr-2 text-blue-600"></i> Vision Analysis
+                        </h4>
+                        <div class="space-y-3">
+                            <div>
+                                <label for="visionLanguage" class="block text-sm font-medium text-gray-600">Language</label>
+                                <select id="visionLanguage" x-model="visionSettings.language" class="form-input w-full text-sm py-1.5 focus-ring mt-1">
+                                    <option value="vietnamese">Vietnamese</option>
+                                    <option value="english">English</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="visionDetailLevel" class="block text-sm font-medium text-gray-600">Detail Level</label>
+                                <select id="visionDetailLevel" x-model="visionSettings.detailLevel" class="form-input w-full text-sm py-1.5 focus-ring mt-1">
+                                    <option value="brief">Brief</option>
+                                    <option value="detailed">Detailed</option>
+                                    <option value="extensive">Extensive</option>
+                                </select>
+                            </div>
+                            <label class="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-50 rounded-md">
+                                <input type="checkbox" x-model="visionSettings.autoAnalyze" class="form-checkbox text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm text-gray-700">Auto-analyze on upload</span>
+                            </label>
+                            <button class="btn btn-secondary w-full" @click="analyzeImageWithVision()" :disabled="visionState.isAnalyzing || !visionCapabilities.apiConfigured">
+                                <span x-show="!visionState.isAnalyzing"><i class="fas fa-wand-magic-sparkles mr-2"></i>Describe Image</span>
+                                <span x-show="visionState.isAnalyzing" class="flex items-center justify-center">
+                                    <div class="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
+                                    Analyzing...
+                                </span>
+                            </button>
+                            <p x-show="!visionCapabilities.apiConfigured" class="text-xs text-center text-yellow-600 bg-yellow-100 p-2 rounded-md">
+                                Vision API key not configured.
+                            </p>
+                        </div>
+                         <div x-show="visionState.isAnalyzing" class="space-y-2 pt-3">
+                            <div class="progress-container">
+                                <div class="progress-bar" :style="'width: ' + visionState.progress + '%'"></div>
+                            </div>
+                            <p class="text-xs text-gray-600 text-center" x-text="visionState.status"></p>
+                        </div>
+                    </div>
                     
                     <div x-show="selectedImage" class="card p-4">
-                        <h4 class="font-medium text-gray-900 mb-3">Search Options</h4>
+                        <h4 class="font-medium text-gray-900 mb-3"><i class="fas fa-search mr-2 text-gray-500"></i>Reverse Search</h4>
                         <label class="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded-md">
                             <input type="checkbox" x-model="searchOptions.socialOnly" class="form-checkbox text-blue-600 focus:ring-blue-500">
                             <span class="text-sm text-gray-700">Search only on social media</span>
@@ -155,9 +198,38 @@
             </div>
             
             <div class="w-full lg:w-2/3 p-4 sm:p-6 overflow-y-auto bg-gray-50">
+                <div x-show="visionState.result" class="card p-4 sm:p-5 mb-6" x-transition>
+                    <div class="flex items-start justify-between mb-3">
+                        <h3 class="font-semibold text-gray-800 text-lg flex items-center">
+                            <i class="fas fa-eye mr-2 text-blue-600"></i> Vision Analysis Result
+                        </h3>
+                        <button @click="clearVisionResult()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div x-show="visionState.result.error" class="text-sm text-red-700 bg-red-100 p-3 rounded-md border border-red-200" x-text="visionState.result.error"></div>
+
+                    <div x-show="!visionState.result.error" class="space-y-4">
+                        <div class="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 p-3 rounded-lg border" x-text="visionState.result.description"></div>
+                        
+                        <div class="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
+                             <div class="flex items-center space-x-3">
+                                <span><i class="fas fa-file-word mr-1"></i> <span x-text="visionState.result?.metadata?.wordCount || '0'"></span> words</span>
+                                <span><i class="fas fa-stopwatch mr-1"></i> <span x-text="visionState.result?.metadata?.processingTime?.toFixed(2) || '0'"></span>s</span>
+                                <span><i class="fas fa-dollar-sign mr-1"></i> Est. <span x-text="visionState.result?.metadata?.costEstimate?.toFixed(4) || '0'"></span></span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button @click="copyVisionDescription()" class="btn btn-secondary btn-sm text-xs"><i class="fas fa-copy mr-1.5"></i>Copy</button>
+                                <button @click="exportVisionResult()" class="btn btn-secondary btn-sm text-xs"><i class="fas fa-download mr-1.5"></i>Export</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div x-show="searchResults.length > 0 || isSearching" class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 pb-3 border-b border-gray-200">
                     <h2 class="text-xl font-semibold text-gray-800 mb-2 sm:mb-0">
-                        Search Results
+                        Reverse Search Results
                         <span x-show="searchResults.length > 0 && !isSearching" class="text-base font-normal text-gray-500" x-text="'(' + filteredResults.length + ' of ' + searchResults.length + ' shown)'"></span>
                     </h2>
                     
@@ -226,10 +298,10 @@
                     <h3 class="text-2xl font-medium text-gray-700 mb-2">No Results Found</h3>
                     <p class="text-gray-500 max-w-md">Your search for the selected image did not return any results. Try a different image or broaden search options.</p>
                 </div>
-                <div x-show="!selectedImage" class="flex flex-col items-center justify-center h-full text-center py-12">
+                <div x-show="!selectedImage && !visionState.result" class="flex flex-col items-center justify-center h-full text-center py-12">
                     <i class="fas fa-images text-6xl text-gray-300 mb-6"></i>
                     <h3 class="text-2xl font-medium text-gray-700 mb-2">No Image Selected</h3>
-                    <p class="text-gray-500 max-w-md">Upload an image using the panel on the left and click "Start Search" to find similar images.</p>
+                    <p class="text-gray-500 max-w-md">Upload an image using the panel on the left to start Vision Analysis or Reverse Search.</p>
                 </div>
             </div>
         </div>
@@ -702,6 +774,7 @@
 
     <script type="text/javascript" src="/eel.js"></script>
     <script src="js/components/common.js"></script> 
+    <script src="js/components/image-vision.js"></script>
     <script src="js/utils/notifications.js"></script> <script src="js/utils/chart-renderer.js"></script> 
     <script src="js/app.js"></script>
     

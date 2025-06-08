@@ -2,11 +2,13 @@ function app() {
     return {
         // ===== STATE MANAGEMENT =====
         activeTab: 'image-search',
-        statusMessage: 'Ready',
+        statusMessage: 'Connecting...',
         isLoading: false,
         loadingTitle: '',
         loadingMessage: '',
         searchTerm: '',
+        backendConnected: false,
+        backendConnectionStatus: 'connecting',
 
         // ===== NEW VISION STATE =====
         visionCapabilities: {
@@ -105,54 +107,77 @@ function app() {
                 eel.expose(this.handleVisionComplete.bind(this), 'visionComplete');
                 eel.expose(this.handleVisionError.bind(this), 'visionError');
 
-                this.addLogEntry('info', 'Eel callbacks exposed to Python (including Vision).');
+                this.addLogEntry('info', 'Eel callbacks exposed to Python.');
             } else {
-                this.addLogEntry('warning', 'Eel is not defined. Running in offline/demo mode.');
+                this.addLogEntry('warning', 'Eel is not defined. App will run in offline/demo mode.');
             }
+            
+            this.setupEventListeners();
+            await this.connectToBackend(); // Robust connection attempt
+        },
 
-            try {
-                await this.loadAppConfig();
-                await this.initVisionCapabilities(); // NEW: Initialize vision
-                this.setupEventListeners();
-                this.addLogEntry('info', 'Application initialized successfully.');
-                this.statusMessage = 'Ready';
-            } catch (error) {
-                console.error('Initialization error:', error);
-                this.showNotification('error', 'Initialization Error', `Failed to initialize application: ${error.message}`);
-                this.addLogEntry('error', `Initialization failed: ${error.message}`);
-                this.statusMessage = 'Initialization Error';
+        async connectToBackend(retries = 4, delay = 500) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    this.backendConnectionStatus = `Connecting... (Attempt ${i + 1})`;
+                    this.addLogEntry('info', `Attempting to connect to Python backend... (Attempt ${i + 1}/${retries})`);
+                    
+                    // Check if a key eel function exists. This is our connection test.
+                    if (typeof eel !== 'undefined' && typeof eel.get_app_config === 'function') {
+                        await this.loadAppConfig();
+                        await this.initVisionCapabilities();
+                        
+                        this.backendConnected = true;
+                        this.backendConnectionStatus = 'Connected';
+                        this.statusMessage = 'Ready';
+                        this.addLogEntry('success', 'Successfully connected to Python backend.');
+                        
+                        return; // Exit loop on success
+                    }
+                    throw new Error("Eel functions not available yet.");
+                } catch (error) {
+                    this.addLogEntry('warning', `Backend connection attempt ${i + 1} failed: ${error.message}`);
+                    if (i === retries - 1) {
+                        // Last retry failed
+                        this.backendConnected = false;
+                        this.backendConnectionStatus = 'Connection Failed';
+                        this.statusMessage = 'Error: Connection Failed';
+                        this.addLogEntry('error', 'All attempts to connect to backend failed. Using mock data for fallback.');
+                        this.showNotification('error', 'Connection Failed', 'Could not connect to the Python backend. The app will run in a limited, offline mode.');
+                        this.useMockDataAsFallback();
+                    } else {
+                        await this.delay(delay * (i + 1)); // Wait longer on each retry
+                    }
+                }
             }
+        },
+        
+        useMockDataAsFallback() {
+            this.addLogEntry('warning', 'Using mock configuration for demo mode due to connection failure.');
+            this.getMockConfig();
+            this.canSearch = true;
+            this.visionCapabilities.available = true;
+            this.visionCapabilities.apiConfigured = true; // Simulate as configured for demo
         },
 
         async loadAppConfig() {
-            this.addLogEntry('info', 'Loading application configuration...');
-            try {
-                if (typeof eel !== 'undefined') {
-                    const config = await eel.get_app_config()();
-                    if (config && config.status === 'ready') {
-                        this.addLogEntry('info', `Config loaded - SERP:${config.has_serp_api}, Imgur:${config.has_imgur}, DeepSeek:${config.has_deepseek}, Grok:${config.has_grok}, ChatGPT:${config.has_chatgpt}`);
-                        this.aiModels.deepseek = !!config.has_deepseek;
-                        this.aiModels.grok = !!config.has_grok;
-                        this.aiModels.chatgpt = !!config.has_chatgpt;
-                        this.canSearch = !!(config.has_serp_api && config.has_imgur);
-                    } else {
-                        throw new Error(config.error || 'Failed to load valid config from backend.');
-                    }
-                } else {
-                    this.addLogEntry('warning', 'Eel not available. Using mock configuration for demo mode.');
-                    this.getMockConfig();
-                    this.canSearch = true;
-                }
-            } catch (error) {
-                this.addLogEntry('error', `Failed to load app config: ${error.message}`);
-                this.showNotification('error', 'Config Error', `Could not load configuration: ${error.message}`);
-                this.getMockConfig();
-                this.canSearch = true;
+            this.addLogEntry('info', 'Loading application configuration from backend...');
+            const config = await eel.get_app_config()();
+            if (config && config.status === 'ready') {
+                this.addLogEntry('info', `Config loaded - SERP:${config.has_serp_api}, Imgur:${config.has_imgur}, DeepSeek:${config.has_deepseek}, Grok:${config.has_grok}, ChatGPT:${config.has_chatgpt}, Vision:${config.has_vision}`);
+                this.aiModels.deepseek = !!config.has_deepseek;
+                this.aiModels.grok = !!config.has_grok;
+                this.aiModels.chatgpt = !!config.has_chatgpt;
+                this.canSearch = !!(config.has_serp_api && config.has_imgur);
+                this.visionCapabilities.available = !!config.vision_available;
+                this.visionCapabilities.apiConfigured = !!config.has_vision;
+            } else {
+                throw new Error(config.error || 'Failed to load valid config from backend.');
             }
         },
 
         getMockConfig() {
-            this.addLogEntry('info', 'Using mock configuration for demo mode.');
+            this.addLogEntry('info', 'Setting mock configuration.');
             this.aiModels.deepseek = true;
             this.aiModels.grok = false;
             this.aiModels.chatgpt = true;
@@ -230,6 +255,7 @@ function app() {
             if (this.selectedImage) this.addLogEntry('info', `Removing selected image: ${this.selectedImage.name}`);
             this.selectedImage = null; this.searchResults = [];
             this.searchProgress = 0; this.searchStatus = '';
+            this.clearVisionResult(); // NEW
         },
 
         async startImageSearch() {
@@ -241,7 +267,7 @@ function app() {
             this.searchStatus = 'Initializing image search...';
             this.addLogEntry('info', `Starting image search for '${this.selectedImage.name}'. Social only: ${this.searchOptions.socialOnly}.`);
             try {
-                if (typeof eel !== 'undefined') {
+                if (this.backendConnected) {
                     const searchId = await eel.search_image_async_web(this.selectedImage.data, this.selectedImage.name, this.searchOptions.socialOnly)();
                     this.addLogEntry('info', `Async image search started with ID: ${searchId}`);
                 } else {
@@ -293,7 +319,7 @@ function app() {
         // ===== VISION METHODS =====
         async initVisionCapabilities() {
             try {
-                if (typeof eel !== 'undefined') {
+                if (this.backendConnected) {
                     const capabilities = await eel.get_vision_capabilities()();
                     this.visionCapabilities = { ...this.visionCapabilities, ...capabilities };
                     
@@ -305,20 +331,22 @@ function app() {
                         this.addLogEntry('warning', 'OpenAI API key not configured for Vision analysis');
                     }
                 } else {
-                    // Demo mode
-                    this.visionCapabilities.available = true;
-                    this.visionCapabilities.apiConfigured = true;
-                    this.addLogEntry('info', '[DEMO] Vision capabilities simulated');
+                     this.addLogEntry('warning', 'Skipping vision capabilities check, backend not connected.');
                 }
             } catch (error) {
                 this.addLogEntry('error', `Failed to load vision capabilities: ${error.message}`);
+                this.visionCapabilities.available = false;
+                this.visionCapabilities.apiConfigured = false;
             }
         },
 
         async analyzeImageWithVision() {
             if (!this.selectedImage || !this.visionCapabilities.available || this.visionState.isAnalyzing) {
                 if (!this.visionCapabilities.available) {
-                    this.showNotification('warning', 'Vision Not Available', 'Vision analysis requires OpenAI API configuration.');
+                    this.showNotification('warning', 'Vision Not Available', 'Vision analysis requires a configured backend.');
+                }
+                 if (!this.visionCapabilities.apiConfigured) {
+                    this.showNotification('warning', 'Vision Not Ready', 'Vision API Key is not configured on the backend.');
                 }
                 return;
             }
@@ -331,8 +359,7 @@ function app() {
             this.addLogEntry('info', `Starting vision analysis for '${this.selectedImage.name}' (${this.visionSettings.language}, ${this.visionSettings.detailLevel})`);
 
             try {
-                if (typeof eel !== 'undefined') {
-                    // Use async version for better UX
+                if (this.backendConnected) {
                     const taskId = await eel.describe_image_async_web(
                         this.selectedImage.data,
                         this.selectedImage.name,
@@ -343,11 +370,10 @@ function app() {
                     this.visionState.taskId = taskId;
                     this.addLogEntry('info', `Vision analysis started with task ID: ${taskId}`);
                 } else {
-                    // Demo mode
                     await this.runDemoVisionAnalysis();
                 }
             } catch (error) {
-                this.handleVisionError('Vision Analysis Failed', error.message || 'Unknown error occurred');
+                this.handleVisionError('demo_task_id', 'Vision Analysis Failed', error.message || 'Unknown error occurred');
             }
         },
 
@@ -365,10 +391,9 @@ function app() {
                 this.handleVisionProgress('demo_task', step.progress, step.message);
             }
 
-            // Mock result
             const mockResult = {
                 success: true,
-                description: `[DEMO] Hình ảnh này cho thấy một ${this.selectedImage.name.includes('car') ? 'chiếc xe hơi' : 'đối tượng'} trong khung cảnh đẹp mắt. Ảnh có màu sắc tươi sáng và composition tốt, tạo cảm giác thú vị cho người xem.`,
+                description: `[DEMO] This image shows a ${this.selectedImage.name.includes('car') ? 'car' : 'subject'} in a scenic setting. The colors are vibrant and the composition is well-balanced, creating an interesting visual experience.`,
                 language: this.visionSettings.language,
                 detail_level: this.visionSettings.detailLevel,
                 text_metrics: {
@@ -419,7 +444,7 @@ function app() {
             this.visionState.isAnalyzing = false;
             this.visionState.progress = 0;
             this.visionState.status = `Error: ${errorMessage}`;
-            this.visionState.result = { error: errorMessage };
+            this.visionState.result = { error: errorMessage, description: null };
             
             this.addLogEntry('error', `Vision analysis failed: ${errorTitle} - ${errorMessage}`);
             this.showNotification('error', errorTitle, errorMessage);
@@ -427,7 +452,7 @@ function app() {
 
         copyVisionDescription() {
             if (this.visionState.result && this.visionState.result.description) {
-                this.copyToClipboard(this.visionState.result.description)
+                Common.copyToClipboard(this.visionState.result.description)
                     .then(() => {
                         this.showNotification('success', 'Copied', 'Vision description copied to clipboard');
                         this.addLogEntry('info', 'Vision description copied to clipboard');
@@ -559,7 +584,7 @@ function app() {
             this.isLoading = true; this.loadingTitle = 'Loading Preview'; this.loadingMessage = `Extracting text from ${fileObject.name}...`;
             this.originalContent = '';
             try {
-                if (typeof eel !== 'undefined') {
+                if (this.backendConnected) {
                     const base64Data = await this.fileToBase64(fileObject);
                     const result = await eel.get_document_text_on_upload(base64Data, fileObject.name)();
                     if (result.success) { this.originalContent = result.text_content; this.addLogEntry('success', `Preview loaded for ${fileObject.name}.`); }
@@ -620,7 +645,7 @@ function app() {
                 ai_models: this.aiModels, language: this.targetLanguage
             };
             try {
-                if (typeof eel !== 'undefined') {
+                if (this.backendConnected) {
                     if (currentRunIsBatch) {
                         itemsToProcess.forEach(item => item.status = 'Processing...');
                         this.addLogEntry('info', `Starting batch processing for ${itemsToProcess.length} files.`);
