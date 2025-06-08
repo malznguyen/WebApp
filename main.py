@@ -7,7 +7,7 @@ import tempfile
 import threading
 import time
 import traceback 
-import requests # Import requests for URL fetching
+import requests
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 
@@ -41,7 +41,8 @@ try:
         process_document,
         extract_text_preview,
         extract_text,
-        process_batch_synthesis
+        process_batch_synthesis,
+        process_documents_batch_web  
     )
     from BE.core.image_processing import validate_image_upload
     logger.info("✅ Core modules imported successfully.")
@@ -80,6 +81,7 @@ def safe_int(value: Any, default: int = 0, min_val: Optional[int] = None, max_va
         if max_val is not None: result = min(max_val, result)
         return result
     except (ValueError, TypeError):
+        logger.debug(f"safe_int conversion failed for value: {value}, using default: {default}")
         return default
 
 def safe_bool(value: Any, default: bool = False) -> bool:
@@ -87,7 +89,9 @@ def safe_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool): return value
     if isinstance(value, str): return value.lower() in ('true', '1', 'yes', 'on')
     try: return bool(value)
-    except: return default
+    except: 
+        logger.debug(f"safe_bool conversion failed for value: {value}, using default: {default}")
+        return default
 
 def validate_base64_data(data: str, expected_prefix: Optional[str] = None) -> bytes:
     """Validates and decodes base64 encoded data."""
@@ -124,6 +128,7 @@ def create_temp_file(data: bytes, filename: str, suffix: Optional[str] = None) -
             temp_file_obj.write(data)
             temp_file_path = temp_file_obj.name
         if not temp_file_path: raise IOError("Failed to obtain temporary file path after creation.")
+        logger.debug(f"Created temp file: {temp_file_path}")
         return temp_file_path
     except Exception as e:
         if temp_file_path and os.path.exists(temp_file_path): cleanup_temp_file(temp_file_path)
@@ -252,7 +257,6 @@ def process_image_from_url(url: str) -> Dict[str, Any]:
         logger.error(f"Unexpected error processing image URL {url}: {e}", exc_info=True)
         return {'success': False, 'error': f"An unexpected error occurred: {e}"}
 
-
 @eel.expose
 def search_image_web(image_data_base64: str, filename: str, social_media_only: bool = False) -> Dict[str, Any]:
     """Handles image search requests from the web UI."""
@@ -323,13 +327,13 @@ def _run_async_vision_task(task_id: str, *args, **kwargs):
     finally:
         active_processing_tasks.pop(task_id, None)
 
-
 @eel.expose
 def search_image_async_web(image_data_base64: str, filename: str, social_media_only: bool = False) -> str:
     search_id = f"search_{int(time.time())}"
     thread = threading.Thread(target=_run_async_search_task, args=(search_id, image_data_base64, filename, social_media_only))
     active_searches[search_id] = thread
     thread.start()
+    logger.debug(f"Started async search thread with ID: {search_id}")
     return search_id
 
 @eel.expose
@@ -353,6 +357,7 @@ def describe_image_async_web(image_data_base64: str, filename: str, language: st
     thread = threading.Thread(target=_run_async_vision_task, args=(task_id, image_data_base64, filename, language, detail_level, custom_prompt))
     active_processing_tasks[task_id] = thread
     thread.start()
+    logger.debug(f"Started async vision thread with ID: {task_id}")
     return task_id
 
 def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
@@ -373,6 +378,7 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
         processing_mode = settings_from_frontend.get('processing_mode', 'individual')
         normalized_settings['is_synthesis_task'] = (processing_mode == 'batch')
 
+        logger.debug(f"Normalized processing settings: {normalized_settings}")
         return normalized_settings
     except Exception as e:
         logger.error(f"Error validating processing settings: {e}", exc_info=True)
@@ -440,7 +446,6 @@ def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, A
         logger.error(f"Unexpected error in process_document_web for '{file_basename}': {e}", exc_info=True)
         return {'success': False, 'error': f"An unexpected error occurred: {e}", 'original_text': '', 'ai_results': [], 'analysis': {}, 'has_errors': True}
 
-
 @eel.expose
 def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[str, Any]]], settings: Dict[str, Any]) -> str:
     """Correctly starts and handles asynchronous document processing."""
@@ -461,29 +466,38 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
             if isinstance(file_input, list): # BATCH PROCESSING
                 log_filename = f"{len(file_input)} documents in batch"
                 eel.processingProgress(process_id, 10, f"Uploading {log_filename}...")()
+                
+                # Upload all files and collect temp paths
                 for i, item_dict in enumerate(file_input):
                     eel.processingProgress(process_id, 10 + int(i / len(file_input) * 15), f"Uploading {item_dict.get('filename', 'file ' + str(i+1))}...")()
                     upload_resp = upload_file_web(item_dict['file_data'], item_dict['filename'])
-                    if not upload_resp['success']: raise IOError(f"Upload failed for {item_dict['filename']}")
+                    if not upload_resp['success']: 
+                        raise IOError(f"Upload failed for {item_dict['filename']}: {upload_resp.get('error', 'Unknown error')}")
                     temp_files_for_batch.append(upload_resp['temp_path'])
                 
                 eel.processingProgress(process_id, 30, "Starting batch synthesis...")()
-                raw_processing_result = process_documents_batch_web(temp_files_for_batch, settings)
+                
+                # 🚨 NOW THIS WILL WORK!
+                raw_processing_result = process_documents_batch_web(temp_files_for_batch, normalized_settings)
+                logger.info(f"Batch processing result structure: {list(raw_processing_result.keys())}")
 
                 # Format batch result for frontend
                 ai_results_output = []
                 for model_key, model_name in [('deepseek_synthesis', 'DeepSeek'), ('grok_synthesis', 'Grok'), ('chatgpt_synthesis', 'ChatGPT')]:
                     content = raw_processing_result.get(model_key)
-                    if content:
+                    if content and content != "<Not executed: No API key or model not selected>":
                          is_error_msg = isinstance(content, str) and ("Error:" in content)
                          ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
                 
                 final_result_for_frontend = {
-                    'success': not bool(raw_processing_result.get('overall_error')),
+                    'success': raw_processing_result.get('success', False),
                     'ai_results': ai_results_output,
-                    **raw_processing_result
+                    'processed_files': raw_processing_result.get('processed_files', []),
+                    'failed_files': raw_processing_result.get('failed_files', []),
+                    'concatenated_text_char_count': raw_processing_result.get('concatenated_text_char_count', 0),
+                    'overall_error': raw_processing_result.get('overall_error'),
+                    'has_errors': bool(raw_processing_result.get('overall_error')) or any(r.get('is_error') for r in ai_results_output)
                 }
-
 
             else: # SINGLE ITEM PROCESSING (File or Text)
                 if isinstance(file_input, dict) and 'direct_text_content' in file_input:
@@ -495,16 +509,17 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     log_filename = file_input['filename']
                     eel.processingProgress(process_id, 15, f"Uploading {log_filename}...")()
                     upload_resp = upload_file_web(file_data, log_filename)
-                    if not upload_resp['success']: raise IOError(f"Upload failed for {log_filename}")
+                    if not upload_resp['success']: 
+                        raise IOError(f"Upload failed for {log_filename}: {upload_resp.get('error', 'Unknown error')}")
                     temp_file_for_this_task = upload_resp['temp_path']
                     eel.processingProgress(process_id, 30, f"Processing file: {log_filename}...")()
                     raw_processing_result = process_document(file_path=temp_file_for_this_task, **normalized_settings)
                 
-                # Format single item result for frontend - THIS WAS THE MISSING STEP
+                # Format single item result for frontend
                 ai_results_output = []
                 for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
                     content = raw_processing_result.get(model_key)
-                    if content is not None:
+                    if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
                         is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
                         ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
                 
@@ -520,20 +535,24 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     'has_errors': has_any_errors
                 }
 
-
             eel.processingProgress(process_id, 100, f"Finalizing results for {log_filename}...")()
             eel.processingComplete(process_id, final_result_for_frontend)()
+            logger.info(f"Processing complete for '{log_filename}' (ID: {process_id})")
+            
         except Exception as e:
             logger.error(f"Async document processing for '{log_filename}' (ID: {process_id}) failed in thread: {e}", exc_info=True)
             eel.processingError(process_id, f"Error processing '{log_filename}': {str(e)}")()
         finally:
+            # Cleanup temp files
             if temp_file_for_this_task: cleanup_temp_file(temp_file_for_this_task)
             for path_to_clean in temp_files_for_batch: cleanup_temp_file(path_to_clean)
             active_processing_tasks.pop(process_id, None)
+            logger.debug(f"Cleaned up resources for process ID: {process_id}")
 
     doc_process_thread = threading.Thread(target=run_doc_processing_in_thread, daemon=True)
     active_processing_tasks[process_id] = doc_process_thread
     doc_process_thread.start()
+    logger.info(f"Started document processing thread with ID: {process_id}")
     return process_id
 
 @eel.expose
@@ -545,6 +564,7 @@ def upload_file_web(file_data_base64: str, filename: str) -> Dict[str, Any]:
             raise ValueError("File data or filename is missing for upload.")
         file_bytes = validate_base64_data(file_data_base64)
         temp_upload_path = create_temp_file(file_bytes, filename, suffix=os.path.splitext(filename)[1] or '.bin')
+        logger.info(f"File uploaded successfully: {filename} -> {temp_upload_path}")
         return {
             'success': True, 'temp_path': temp_upload_path,
             'size': len(file_bytes), 'filename': os.path.basename(temp_upload_path)
@@ -557,7 +577,10 @@ def upload_file_web(file_data_base64: str, filename: str) -> Dict[str, Any]:
 @eel.expose
 def perform_cleanup_temp_files() -> Dict[str, Any]:
     """Cleans up all files within the 'temp' directory."""
-    temp_dir_path = 'temp'; cleaned_files_count = 0; errors_list = []
+    temp_dir_path = 'temp'
+    cleaned_files_count = 0
+    errors_list = []
+    
     try:
         logger.info(f"Initiating cleanup of temporary files in '{temp_dir_path}'.")
         if os.path.isdir(temp_dir_path):
@@ -569,17 +592,18 @@ def perform_cleanup_temp_files() -> Dict[str, Any]:
                         cleaned_files_count += 1
                     except Exception as e_file:
                         err_detail = f"Could not delete temp file '{item_path}': {e_file}"
-                        logger.warning(err_detail); errors_list.append(err_detail)
+                        logger.warning(err_detail)
+                        errors_list.append(err_detail)
             message = f"Cleanup complete. {cleaned_files_count} files deleted."
             if errors_list: message += f" Encountered {len(errors_list)} errors."
             logger.info(message)
             return {'success': True, 'cleaned_count': cleaned_files_count, 'errors': errors_list}
         else:
+            logger.warning(f"Temp directory '{temp_dir_path}' not found.")
             return {'success': True, 'cleaned_count': 0, 'errors': [], 'message': "Temp directory not found."}
     except Exception as e_main:
         logger.error(f"Major error during temporary files cleanup: {e_main}", exc_info=True)
         return {'success': False, 'error': str(e_main), 'cleaned_count': 0, 'errors': [str(e_main)]}
-
 
 # ===== APPLICATION STARTUP LOGIC =====
 def start_app():
@@ -590,14 +614,20 @@ def start_app():
         
         initial_config = get_app_config()
         logger.info(f"🚀 Enhanced Toolkit v{initial_config.get('version', 'N/A')} starting...")
+        logger.info(f"Configuration status: {initial_config}")
+        
         if not initial_config.get('ready', False) or not initial_config.get('has_serp_api'):
             logger.warning(f"⚠️ App may operate in limited mode. Missing keys: {initial_config.get('missing_keys', [])}")
 
         eel_start_options = {
-            'size': (WINDOW_WIDTH, WINDOW_HEIGHT), 'position': (50, 50),
-            'disable_cache': True, 'port': 0, 'host': 'localhost'
+            'size': (WINDOW_WIDTH, WINDOW_HEIGHT), 
+            'position': (50, 50),
+            'disable_cache': True, 
+            'port': 0,  # Auto-select port
+            'host': 'localhost'
         }
         
+        logger.info("Starting Eel web server...")
         # This starts the web server and opens the browser
         eel.start('index.html', mode='chrome', **eel_start_options)
 
@@ -608,6 +638,28 @@ def start_app():
         logger.critical(f"❌ Fatal error during application startup: {e}", exc_info=True)
         print(f"\n--- FATAL ERROR ---\nAn unexpected error occurred: {e}\nCheck the latest log file in the 'logs' directory for details.")
 
+# 🚨 PARANOID CHECK: Ensure all required functions exist
+def _verify_imports():
+    """Verify all critical imports are available (run this during dev/testing)"""
+    required_functions = [
+        ('process_document', process_document),
+        ('process_batch_synthesis', process_batch_synthesis),
+        ('process_documents_batch_web', process_documents_batch_web),
+        ('extract_text', extract_text),
+        ('validate_image_upload', validate_image_upload),
+        ('search_image_sync', search_image_sync)
+    ]
+    
+    for func_name, func_obj in required_functions:
+        if not callable(func_obj):
+            logger.critical(f"❌ CRITICAL: {func_name} is not callable!")
+            raise ImportError(f"{func_name} is not properly imported or defined!")
+    
+    logger.info("✅ All critical imports verified successfully.")
+
+# Run verification in debug mode
+if __name__ == '__main__' and os.environ.get('DEBUG', '').lower() == 'true':
+    _verify_imports()
 
 if __name__ == '__main__':
     start_app()
