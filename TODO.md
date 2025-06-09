@@ -1,7 +1,7 @@
 "# TODO List for Software Projects\n",
     "## 📘 Phần mềm tóm tắt văn bản",
     "- [ ] Nhập vào 1 hoặc nhiều URL _(Thời gian: 1 ngày)_",
-    "- [ ] Tóm tắt nội dung theo số lượng từ (100; 200…) _(Thời gian: 1 ngày)_",
+    "- [x] Tóm tắt nội dung theo số lượng từ (100; 200…) _(Thời gian: 1 ngày)_",
     "- [x] Dịch qua lại đa ngôn ngữ (Anh, Việt, Nhật…) _(Đã hoàn thành)_",
     "- [ ] Tra thông tin metadata của file đầu vào _(Thời gian: 2 tuần) — Cần nghiên cứu thêm_",
     "- [x] Xem nguồn đăng tương tự với bài viết đó _(Thời gian: 2 tuần)_",
