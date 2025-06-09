@@ -371,7 +371,9 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
         normalized_settings['grok_key'] = GROK_API_KEY if safe_bool(ai_models_selection.get('grok', False)) else None
         normalized_settings['chatgpt_key'] = CHATGPT_API_KEY if safe_bool(ai_models_selection.get('chatgpt', False)) else None
         
+        normalized_settings['summary_mode'] = settings_from_frontend.get('summary_mode', 'full')
         normalized_settings['summary_level'] = safe_int(settings_from_frontend.get('detail_level', 50), default=50, min_val=10, max_val=90)
+        normalized_settings['word_count_limit'] = safe_int(settings_from_frontend.get('word_count_limit', 500), default=500, min_val=50, max_val=5000)
         lang_code = settings_from_frontend.get('language')
         normalized_settings['target_language_code'] = lang_code if lang_code and isinstance(lang_code, str) and lang_code.strip() else None
         
@@ -383,8 +385,14 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
     except Exception as e:
         logger.error(f"Error validating processing settings: {e}", exc_info=True)
         return {
-            'deepseek_key': None, 'grok_key': None, 'chatgpt_key': None,
-            'summary_level': 50, 'target_language_code': None, 'is_synthesis_task': False
+            'deepseek_key': None,
+            'grok_key': None,
+            'chatgpt_key': None,
+            'summary_mode': 'full',
+            'summary_level': 50,
+            'word_count_limit': 500,
+            'target_language_code': None,
+            'is_synthesis_task': False,
         }
 
 @eel.expose
