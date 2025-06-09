@@ -189,8 +189,13 @@ def _get_language_full_name(lang_code: Optional[str]) -> str:
     return lang_map.get(lang_code.lower(), lang_code)
 
 
-def _create_summary_prompt(text_to_summarize: str, summary_level: int, language_instruction: str, 
-                           is_synthesis_prompt: bool = False, is_batch_synthesis: bool = False) -> Tuple[str, str]:
+def _create_summary_prompt(text_to_summarize: str,
+                           summary_mode: str,
+                           summary_level: int,
+                           word_count_limit: int,
+                           language_instruction: str,
+                           is_synthesis_prompt: bool = False,
+                           is_batch_synthesis: bool = False) -> Tuple[str, str]:
     """Creates the user prompt and system role content for AI summarization/synthesis."""
     trimmed_text = text_to_summarize[:MAX_PROMPT_TEXT_LENGTH]
     if len(text_to_summarize) > MAX_PROMPT_TEXT_LENGTH:
@@ -202,11 +207,17 @@ def _create_summary_prompt(text_to_summarize: str, summary_level: int, language_
     else:
         lang_instr_str = lang_instr_str.strip() + " " if lang_instr_str.strip() else ""
 
+    detail_instr = ""
+    if summary_mode == 'percentage':
+        detail_instr = f"The desired detail level for this synthesis is approximately {summary_level}%. "
+    elif summary_mode == 'word-count':
+        detail_instr = f"Please limit the output to about {word_count_limit} words. "
+
     if is_batch_synthesis:
         task_description = (
             f"Your task is to synthesize key information from the following collection of **distinct documents**. "
             f"Provide a comprehensive overview that integrates the main points, arguments, and findings from **all provided documents**. "
-            f"The desired detail level for this synthesis is approximately {summary_level}%. {lang_instr_str}"
+            f"{detail_instr}{lang_instr_str}"
             f"The documents are separated by '{DOCUMENT_SEPARATOR.strip()}'. "
             f"Synthesize the following documents:\n--- START DOCUMENT COLLECTION ---\n{trimmed_text}\n--- END DOCUMENT COLLECTION ---"
         )
@@ -218,7 +229,7 @@ def _create_summary_prompt(text_to_summarize: str, summary_level: int, language_
         task_description = (
             f"Synthesize the key information from the following combined text. This text may be derived from multiple sections of a single document or related sources. "
             f"Provide a comprehensive overview that integrates the main points, arguments, and findings. "
-            f"The desired detail level for this synthesis is {summary_level}%. {lang_instr_str}"
+            f"{detail_instr}{lang_instr_str}"
             f"Combined text to synthesize:\n--- START COMBINED TEXT ---\n{trimmed_text}\n--- END COMBINED TEXT ---"
         )
         system_role_content = (
@@ -227,7 +238,7 @@ def _create_summary_prompt(text_to_summarize: str, summary_level: int, language_
         )
     else:
         task_description = (
-            f"Create a summary for the following document with a detail level of approximately {summary_level}%. {lang_instr_str}"
+            f"Create a summary for the following document. {detail_instr}{lang_instr_str}"
             f"Document to summarize:\n--- START DOCUMENT ---\n{trimmed_text}\n--- END DOCUMENT ---"
         )
         system_role_content = (
@@ -292,8 +303,14 @@ def _call_ai_model(client_config: Dict[str, Any], model_name: str, messages: Lis
         raise ValueError("Invalid or empty API response structure from AI model.")
 
 
-def summarize_with_deepseek(text: str, api_key: str, summary_level: int = 50, target_language_code: Optional[str] = None, 
-                            is_synthesis_prompt: bool = False, is_batch_synthesis: bool = False) -> str:
+def summarize_with_deepseek(text: str,
+                            api_key: str,
+                            summary_mode: str = 'full',
+                            summary_level: int = 50,
+                            word_count_limit: int = 500,
+                            target_language_code: Optional[str] = None,
+                            is_synthesis_prompt: bool = False,
+                            is_batch_synthesis: bool = False) -> str:
     if not api_key: return "DeepSeek Error: API Key not configured."
     if not text or not text.strip(): return "DeepSeek Error: Input text for summarization is empty."
     from config.constants import API_TIMEOUT_SEC 
@@ -302,10 +319,21 @@ def summarize_with_deepseek(text: str, api_key: str, summary_level: int = 50, ta
     lang_instruction = f"IMPORTANT: Please provide the output ONLY in {target_lang_full}." if target_language_code else ""
     system_role_lang_enforce = f" You MUST provide the output exclusively in {target_lang_full}." if target_language_code else ""
 
-    prompt_text, system_content_base = _create_summary_prompt(text, summary_level, lang_instruction, is_synthesis_prompt, is_batch_synthesis)
+    prompt_text, system_content_base = _create_summary_prompt(
+        text,
+        summary_mode,
+        summary_level,
+        word_count_limit,
+        lang_instruction,
+        is_synthesis_prompt,
+        is_batch_synthesis,
+    )
     final_system_content = f"{system_content_base}{system_role_lang_enforce}"
 
-    logger.debug(f"Calling DeepSeek API ({'BATCH_SYNTHESIS' if is_batch_synthesis else ('SYNTHESIS' if is_synthesis_prompt else 'SUMMARY')}, Lang: {target_lang_full})...")
+    logger.debug(
+        f"Calling DeepSeek API ({'BATCH_SYNTHESIS' if is_batch_synthesis else ('SYNTHESIS' if is_synthesis_prompt else 'SUMMARY')}, "
+        f"Mode: {summary_mode}, Lang: {target_lang_full})..."
+    )
     try:
         summary = _call_ai_model(
             client_config={'api_key': api_key, 'base_url': "https://api.deepseek.com"},
@@ -319,8 +347,14 @@ def summarize_with_deepseek(text: str, api_key: str, summary_level: int = 50, ta
         return _handle_api_error("DeepSeek", e)
 
 
-def summarize_with_grok(text: str, api_key: str, summary_level: int = 50, target_language_code: Optional[str] = None, 
-                        is_synthesis_prompt: bool = False, is_batch_synthesis: bool = False) -> str:
+def summarize_with_grok(text: str,
+                        api_key: str,
+                        summary_mode: str = 'full',
+                        summary_level: int = 50,
+                        word_count_limit: int = 500,
+                        target_language_code: Optional[str] = None,
+                        is_synthesis_prompt: bool = False,
+                        is_batch_synthesis: bool = False) -> str:
     if not api_key: return "Grok Error: API Key not configured."
     if not text or not text.strip(): return "Grok Error: Input text for summarization is empty."
     from config.constants import API_TIMEOUT_SEC
@@ -329,13 +363,24 @@ def summarize_with_grok(text: str, api_key: str, summary_level: int = 50, target
     lang_instruction = f"\nVERY IMPORTANT: The final output MUST be in {target_lang_full}. No other languages are acceptable." if target_language_code else ""
     system_role_lang_enforce = f" Always respond ONLY in {target_lang_full}. Strict adherence is mandatory." if target_language_code else ""
     
-    prompt_text, system_content_base = _create_summary_prompt(text, summary_level, lang_instruction, is_synthesis_prompt, is_batch_synthesis)
+    prompt_text, system_content_base = _create_summary_prompt(
+        text,
+        summary_mode,
+        summary_level,
+        word_count_limit,
+        lang_instruction,
+        is_synthesis_prompt,
+        is_batch_synthesis,
+    )
     if is_batch_synthesis or is_synthesis_prompt:
         final_system_content = f"You are an AI that synthesizes information from provided text sources.{system_role_lang_enforce}"
     else:
         final_system_content = f"{system_content_base}{system_role_lang_enforce}"
 
-    logger.debug(f"Calling Grok API ({'BATCH_SYNTHESIS' if is_batch_synthesis else ('SYNTHESIS' if is_synthesis_prompt else 'SUMMARY')}, Lang: {target_lang_full})...")
+    logger.debug(
+        f"Calling Grok API ({'BATCH_SYNTHESIS' if is_batch_synthesis else ('SYNTHESIS' if is_synthesis_prompt else 'SUMMARY')}, "
+        f"Mode: {summary_mode}, Lang: {target_lang_full})..."
+    )
     try:
         summary = _call_ai_model(
             client_config={'api_key': api_key, 'base_url': "https://api.x.ai/v1"},
@@ -349,8 +394,14 @@ def summarize_with_grok(text: str, api_key: str, summary_level: int = 50, target
         return _handle_api_error("Grok", e)
 
 
-def summarize_with_chatgpt(text: str, api_key: str, summary_level: int = 50, target_language_code: Optional[str] = None, 
-                           is_synthesis_prompt: bool = False, is_batch_synthesis: bool = False) -> str:
+def summarize_with_chatgpt(text: str,
+                           api_key: str,
+                           summary_mode: str = 'full',
+                           summary_level: int = 50,
+                           word_count_limit: int = 500,
+                           target_language_code: Optional[str] = None,
+                           is_synthesis_prompt: bool = False,
+                           is_batch_synthesis: bool = False) -> str:
     if not api_key: return "ChatGPT Error: API Key not configured."
     if not text or not text.strip(): return "ChatGPT Error: Input text for summarization is empty."
     from config.constants import API_TIMEOUT_SEC
@@ -359,10 +410,21 @@ def summarize_with_chatgpt(text: str, api_key: str, summary_level: int = 50, tar
     lang_instruction = f"CRITICAL REQUIREMENT: Provide the final output ONLY in {target_lang_full}. Adherence is paramount." if target_language_code else ""
     system_role_lang_enforce = f" You must respond exclusively in {target_lang_full}. No other language is permitted." if target_language_code else ""
 
-    prompt_text, system_content_base = _create_summary_prompt(text, summary_level, lang_instruction, is_synthesis_prompt, is_batch_synthesis)
+    prompt_text, system_content_base = _create_summary_prompt(
+        text,
+        summary_mode,
+        summary_level,
+        word_count_limit,
+        lang_instruction,
+        is_synthesis_prompt,
+        is_batch_synthesis,
+    )
     final_system_content = f"{system_content_base}{system_role_lang_enforce}"
 
-    logger.debug(f"Calling ChatGPT API ({'BATCH_SYNTHESIS' if is_batch_synthesis else ('SYNTHESIS' if is_synthesis_prompt else 'SUMMARY')}, Lang: {target_lang_full})...")
+    logger.debug(
+        f"Calling ChatGPT API ({'BATCH_SYNTHESIS' if is_batch_synthesis else ('SYNTHESIS' if is_synthesis_prompt else 'SUMMARY')}, "
+        f"Mode: {summary_mode}, Lang: {target_lang_full})..."
+    )
     try:
         summary = _call_ai_model(
             client_config={'api_key': api_key},
@@ -376,16 +438,32 @@ def summarize_with_chatgpt(text: str, api_key: str, summary_level: int = 50, tar
         return _handle_api_error("ChatGPT", e)
 
 
-def _process_chunk_task(api_func, chunk_text: str, api_key_val: str, summary_level_val: int, 
-                        target_lang: Optional[str], for_synthesis: bool, is_batch_synth_flag: bool, 
-                        api_name_str: str, chunk_idx: int) -> str:
+def _process_chunk_task(api_func,
+                        chunk_text: str,
+                        api_key_val: str,
+                        summary_mode_val: str,
+                        summary_level_val: int,
+                        word_limit_val: int,
+                        target_lang: Optional[str],
+                        for_synthesis: bool,
+                        is_batch_synth_flag: bool,
+                        api_name_str: str,
+                        chunk_idx: int) -> str:
     """Helper function to run each chunk summarization/synthesis in a thread."""
     target_language_full_name = _get_language_full_name(target_lang)
     log_task_type = "BATCH_SYNTH_CHUNK" if is_batch_synth_flag else ("SYNTH_CHUNK" if for_synthesis else "SUMM_CHUNK")
     logger.info(f"Starting chunk {chunk_idx+1} ({log_task_type}) with {api_name_str} for language: {target_language_full_name}...")
     try:
-        summary_part = api_func(chunk_text, api_key_val, summary_level_val, target_lang, 
-                                is_synthesis_prompt=for_synthesis, is_batch_synthesis=is_batch_synth_flag)
+        summary_part = api_func(
+            chunk_text,
+            api_key_val,
+            summary_mode_val,
+            summary_level_val,
+            word_limit_val,
+            target_lang,
+            is_synthesis_prompt=for_synthesis,
+            is_batch_synthesis=is_batch_synth_flag,
+        )
         
         if summary_part and isinstance(summary_part, str) and not (summary_part.startswith(f"{api_name_str} Error:") or "[[[Error" in summary_part):
             logger.info(f"Successfully processed chunk {chunk_idx+1} ({log_task_type}) with {api_name_str}.")
@@ -399,9 +477,18 @@ def _process_chunk_task(api_func, chunk_text: str, api_key_val: str, summary_lev
         return f"[[[Critical system error processing chunk {chunk_idx+1} ({log_task_type}) with {api_name_str}]]]"
 
 
-def summarize_chunks_and_combine(api_func, api_key_val: str, api_name_str: str, text_chunks: List[str], 
-                                 summary_level_val: int, target_lang: Optional[str] = None, 
-                                 for_synthesis: bool = False, is_batch_synth_flag: bool = False) -> str:
+def summarize_chunks_and_combine(
+        api_func,
+        api_key_val: str,
+        api_name_str: str,
+        text_chunks: List[str],
+        summary_mode_val: str,
+        summary_level_val: int,
+        word_limit_val: int,
+        target_lang: Optional[str] = None,
+        for_synthesis: bool = False,
+        is_batch_synth_flag: bool = False
+) -> str:
     """Processes text in chunks and combines the results, potentially synthesizing them."""
     if not api_key_val: return f"{api_name_str} Error: API Key not configured."
     num_chunks = len(text_chunks)
@@ -415,8 +502,20 @@ def summarize_chunks_and_combine(api_func, api_key_val: str, api_name_str: str, 
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CHUNK_WORKERS) as executor:
         future_to_chunk_idx = {
-            executor.submit(_process_chunk_task, api_func, chunk_text, api_key_val, summary_level_val, 
-                            target_lang, for_synthesis, is_batch_synth_flag, api_name_str, i): i
+            executor.submit(
+                _process_chunk_task,
+                api_func,
+                chunk_text,
+                api_key_val,
+                summary_mode_val,
+                summary_level_val,
+                word_limit_val,
+                target_lang,
+                for_synthesis,
+                is_batch_synth_flag,
+                api_name_str,
+                i
+            ): i
             for i, chunk_text in enumerate(text_chunks) if chunk_text and chunk_text.strip()
         }
         for future in concurrent.futures.as_completed(future_to_chunk_idx):
@@ -447,11 +546,36 @@ def summarize_chunks_and_combine(api_func, api_key_val: str, api_name_str: str, 
         return f"{api_name_str} Error: Combined text from valid chunks is unexpectedly empty."
 
     try:
-        final_synthesis_level = max(int(summary_level_val * 0.8), 20)
-        logger.info(f"Final synthesis pass for {api_name_str} (Target Lang: {target_language_full_name}) with detail level: {final_synthesis_level}%")
-
-        final_output = api_func(combined_text_for_final_pass, api_key_val, final_synthesis_level, 
-                                target_lang, is_synthesis_prompt=True, is_batch_synthesis=is_batch_synth_flag)
+        if summary_mode_val == 'percentage':
+            final_synthesis_level = max(int(summary_level_val * 0.8), 20)
+            final_output = api_func(
+                combined_text_for_final_pass,
+                api_key_val,
+                summary_mode_val,
+                final_synthesis_level,
+                word_limit_val,
+                target_lang,
+                is_synthesis_prompt=True,
+                is_batch_synthesis=is_batch_synth_flag,
+            )
+            logger.info(
+                f"Final synthesis pass for {api_name_str} (Target Lang: {target_language_full_name}) with detail level: {final_synthesis_level}%"
+            )
+        else:
+            # For 'word-count' or 'full', reuse provided limits directly
+            final_output = api_func(
+                combined_text_for_final_pass,
+                api_key_val,
+                summary_mode_val,
+                summary_level_val,
+                word_limit_val,
+                target_lang,
+                is_synthesis_prompt=True,
+                is_batch_synthesis=is_batch_synth_flag,
+            )
+            logger.info(
+                f"Final synthesis pass for {api_name_str} (Target Lang: {target_language_full_name})"
+            )
         
         if chunk_errors_count > 0:
             error_note = f"\n\n(Note: {chunk_errors_count} out of {num_chunks} text sections encountered errors during initial processing with {api_name_str} and were excluded from this final result.)"
@@ -467,11 +591,21 @@ def summarize_chunks_and_combine(api_func, api_key_val: str, api_name_str: str, 
         return f"{api_name_str} Error: Critical error during final synthesis with {api_name_str}: {final_err}"
 
 
-def _process_document_with_single_api(api_name: str, api_function, api_key: str, 
-                                      text_to_process: str, num_chunks: int, chunks: List[str],
-                                      summary_level: int, target_language_code: Optional[str], 
-                                      is_synthesis_task: bool, is_batch_synthesis_task: bool, 
-                                      task_name_for_log: str) -> Tuple[str, str]:
+def _process_document_with_single_api(
+    api_name: str,
+    api_function,
+    api_key: str,
+    text_to_process: str,
+    num_chunks: int,
+    chunks: List[str],
+    summary_mode: str,
+    summary_level: int,
+    word_count_limit: int,
+    target_language_code: Optional[str],
+    is_synthesis_task: bool,
+    is_batch_synthesis_task: bool,
+    task_name_for_log: str,
+) -> Tuple[str, str]:
     """Helper to process text (single doc or combined batch) with one AI API, handling chunking."""
     target_lang_full = _get_language_full_name(target_language_code)
     log_task_type = "BATCH_SYNTHESIS" if is_batch_synthesis_task else ("SYNTHESIS" if is_synthesis_task else "SUMMARY")
@@ -484,14 +618,29 @@ def _process_document_with_single_api(api_name: str, api_function, api_key: str,
 
     api_result: str
     if num_chunks == 1:
-        api_result = api_function(chunks[0], api_key, summary_level, target_language_code, 
-                                  is_synthesis_prompt=is_synthesis_task, 
-                                  is_batch_synthesis=is_batch_synthesis_task)
+        api_result = api_function(
+            chunks[0],
+            api_key,
+            summary_mode,
+            summary_level,
+            word_count_limit,
+            target_language_code,
+            is_synthesis_prompt=is_synthesis_task,
+            is_batch_synthesis=is_batch_synthesis_task,
+        )
     else:
-        api_result = summarize_chunks_and_combine(api_function, api_key, api_name.capitalize(), chunks, 
-                                                  summary_level, target_language_code, 
-                                                  for_synthesis=is_synthesis_task,
-                                                  is_batch_synth_flag=is_batch_synthesis_task)
+        api_result = summarize_chunks_and_combine(
+            api_function,
+            api_key,
+            api_name.capitalize(),
+            chunks,
+            summary_mode,
+            summary_level,
+            word_count_limit,
+            target_language_code,
+            for_synthesis=is_synthesis_task,
+            is_batch_synth_flag=is_batch_synthesis_task,
+        )
 
     end_time = time.time()
     logger.info(f"{api_name.capitalize()} API call for '{task_name_for_log}' ({log_task_type}) took {end_time - start_time:.2f} seconds.")
@@ -506,20 +655,30 @@ def _process_document_with_single_api(api_name: str, api_function, api_key: str,
     return api_name, api_result
 
 
-def process_document(file_path: Optional[str] = None,
-                     input_text_to_process: Optional[str] = None,
-                     is_synthesis_task: bool = False,
-                     deepseek_key: Optional[str] = None,
-                     grok_key: Optional[str] = None,
-                     chatgpt_key: Optional[str] = None,
-                     summary_level: int = 50, 
-                     target_language_code: Optional[str] = None) -> Dict[str, Any]:
+def process_document(
+    file_path: Optional[str] = None,
+    input_text_to_process: Optional[str] = None,
+    is_synthesis_task: bool = False,
+    deepseek_key: Optional[str] = None,
+    grok_key: Optional[str] = None,
+    chatgpt_key: Optional[str] = None,
+    summary_mode: str = 'full',
+    summary_level: int = 50,
+    word_count_limit: int = 500,
+    target_language_code: Optional[str] = None,
+) -> Dict[str, Any]:
     """Processes a single document for text extraction, analysis, and AI summarization."""
     
     task_name = os.path.basename(file_path) if file_path else "Direct Input Text"
     processing_type = "SINGLE_DOC_SYNTHESIS" if is_synthesis_task else "INDIVIDUAL_SUMMARY"
     lang_str = f"Language: {_get_language_full_name(target_language_code)}"
-    logger.info(f"Starting [{processing_type}]: '{task_name}' (Detail: {summary_level}%, {lang_str})")
+    if summary_mode == 'percentage':
+        detail_str = f"Detail: {summary_level}%"
+    elif summary_mode == 'word-count':
+        detail_str = f"Word Limit: {word_count_limit}"
+    else:
+        detail_str = "Full summary"
+    logger.info(f"Starting [{processing_type}]: '{task_name}' ({detail_str}, {lang_str})")
 
     results: Dict[str, Any] = {'original_text': None, 'deepseek': None, 'grok': None, 'chatgpt': None, 'analysis': None, 'error': None}
     text_for_processing: Optional[str] = None
@@ -590,11 +749,19 @@ def process_document(file_path: Optional[str] = None,
                 future_to_api_name = {
                     executor.submit(
                         _process_document_with_single_api,
-                        call_info['name'], call_info['func'], call_info['key'],
-                        text_for_processing, num_chunks, chunks, 
-                        summary_level, target_language_code,
-                        is_synthesis_task, False,
-                        task_name
+                        call_info['name'],
+                        call_info['func'],
+                        call_info['key'],
+                        text_for_processing,
+                        num_chunks,
+                        chunks,
+                        summary_mode,
+                        summary_level,
+                        word_count_limit,
+                        target_language_code,
+                        is_synthesis_task,
+                        False,
+                        task_name,
                     ): call_info['name'] for call_info in active_api_configs
                 }
                 for future in concurrent.futures.as_completed(future_to_api_name):
@@ -638,12 +805,16 @@ def process_document(file_path: Optional[str] = None,
         }
 
 # 🚨 CRITICAL: BATCH SYNTHESIS FUNCTION - FIXED!
-def process_batch_synthesis(file_paths: List[str],
-                            deepseek_key: Optional[str] = None,
-                            grok_key: Optional[str] = None,
-                            chatgpt_key: Optional[str] = None,
-                            summary_level: int = 50,
-                            target_language_code: Optional[str] = None) -> Dict[str, Any]:
+def process_batch_synthesis(
+    file_paths: List[str],
+    deepseek_key: Optional[str] = None,
+    grok_key: Optional[str] = None,
+    chatgpt_key: Optional[str] = None,
+    summary_mode: str = 'full',
+    summary_level: int = 50,
+    word_count_limit: int = 500,
+    target_language_code: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Processes a batch of documents, extracts text from each, concatenates them,
     and then performs a synthesis using enabled AI models.
@@ -652,7 +823,13 @@ def process_batch_synthesis(file_paths: List[str],
     """
     batch_task_name = f"Batch Synthesis of {len(file_paths)} documents"
     lang_str = f"Language: {_get_language_full_name(target_language_code)}"
-    logger.info(f"Starting [{batch_task_name}] (Detail: {summary_level}%, {lang_str})")
+    if summary_mode == 'percentage':
+        detail_str = f"Detail: {summary_level}%"
+    elif summary_mode == 'word-count':
+        detail_str = f"Word Limit: {word_count_limit}"
+    else:
+        detail_str = 'Full summary'
+    logger.info(f"Starting [{batch_task_name}] ({detail_str}, {lang_str})")
 
     results: Dict[str, Any] = {
         'processed_files': [],
@@ -722,11 +899,19 @@ def process_batch_synthesis(file_paths: List[str],
             future_to_api_info = {
                 executor.submit(
                     _process_document_with_single_api,
-                    call_info['name'], call_info['func'], call_info['key'],
-                    concatenated_text, num_chunks, chunks, 
-                    summary_level, target_language_code,
-                    True, True,  # is_synthesis_task=True, is_batch_synthesis_task=True
-                    batch_task_name 
+                    call_info['name'],
+                    call_info['func'],
+                    call_info['key'],
+                    concatenated_text,
+                    num_chunks,
+                    chunks,
+                    summary_mode,
+                    summary_level,
+                    word_count_limit,
+                    target_language_code,
+                    True,
+                    True,  # is_synthesis_task=True, is_batch_synthesis_task=True
+                    batch_task_name,
                 ): call_info for call_info in active_api_configs_batch
             }
             for future in concurrent.futures.as_completed(future_to_api_info):
@@ -783,7 +968,9 @@ def process_documents_batch_web(file_paths: List[str], settings: Dict[str, Any])
         settings = {}
     
     # Extract and validate settings
-    summary_level = safe_int(settings.get('summary_level', 50), default=50, min_val=10, max_val=90)
+    summary_mode = settings.get('summary_mode', 'full')
+    summary_level = safe_int(settings.get('detail_level', 50), default=50, min_val=10, max_val=90)
+    word_count_limit = safe_int(settings.get('word_count_limit', 500), default=500, min_val=50, max_val=5000)
     target_language_code = settings.get('target_language_code')
     
     # Get API keys from settings
@@ -799,8 +986,10 @@ def process_documents_batch_web(file_paths: List[str], settings: Dict[str, Any])
         deepseek_key=deepseek_key,
         grok_key=grok_key,
         chatgpt_key=chatgpt_key,
+        summary_mode=summary_mode,
         summary_level=summary_level,
-        target_language_code=target_language_code
+        word_count_limit=word_count_limit,
+        target_language_code=target_language_code,
     )
 
 
@@ -829,8 +1018,10 @@ def process_document_async(file_path: Optional[str] = None, input_text: Optional
             deepseek_key=actual_settings.get('deepseek_key'),
             grok_key=actual_settings.get('grok_key'),
             chatgpt_key=actual_settings.get('chatgpt_key'),
-            summary_level=int(actual_settings.get('summary_level', 50)),
-            target_language_code=actual_settings.get('target_language_code')
+            summary_mode=actual_settings.get('summary_mode', 'full'),
+            summary_level=int(actual_settings.get('detail_level', 50)),
+            word_count_limit=int(actual_settings.get('word_count_limit', 500)),
+            target_language_code=actual_settings.get('target_language_code'),
         )
         if progress_callback:
             msg = f"Processing completed with issues: {result.get('error')}" if result.get('error') else "Processing completed successfully."
@@ -857,13 +1048,26 @@ def extract_text_preview(file_path: str, max_chars: int = 1000) -> str:
 def validate_document_settings(settings: Dict[str, Any]) -> Dict[str, Any]: 
     errors: List[str] = []
     
-    summary_level_str = settings.get('summary_level', '50')
+    summary_mode = settings.get('summary_mode', 'full')
+    detail_level_str = settings.get('detail_level', '50')
+    word_limit_str = settings.get('word_count_limit', '500')
+
+    if summary_mode not in ['full', 'percentage', 'word-count']:
+        errors.append("Invalid summary_mode value.")
+
     try:
-        summary_level = int(summary_level_str)
-        if not (10 <= summary_level <= 90):
-            errors.append("Summary level must be an integer between 10 and 90.")
+        detail_level = int(detail_level_str)
+        if not (10 <= detail_level <= 90):
+            errors.append("Detail level must be between 10 and 90.")
     except (ValueError, TypeError):
-        errors.append("Summary level must be a valid integer.")
+        errors.append("Detail level must be a valid integer.")
+
+    try:
+        word_limit = int(word_limit_str)
+        if not (50 <= word_limit <= 5000):
+            errors.append("Word count limit must be between 50 and 5000.")
+    except (ValueError, TypeError):
+        errors.append("Word count limit must be a valid integer.")
 
     target_language_code = settings.get('target_language_code')
     if target_language_code is not None:
