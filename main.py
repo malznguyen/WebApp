@@ -297,9 +297,9 @@ def search_image_web(image_data_base64: str, filename: str, social_media_only: b
 def _run_async_search_task(task_id: str, *args, **kwargs):
     """Wrapper specifically for search tasks."""
     try:
-        eel.searchProgress(task_id, 20, "Uploading and preparing image...")
+        eel.searchProgress(task_id, 20, "Uploading and preparing image...")()
         result_dict = search_image_web(*args, **kwargs)
-        eel.searchProgress(task_id, 100, "Search complete.")
+        eel.searchProgress(task_id, 100, "Search complete.")()
         if result_dict.get('success'):
             eel.searchComplete(task_id, result_dict['results'])()
         else:
