@@ -18,7 +18,7 @@ Enhanced Toolkit is a Python and JavaScript application for reverse image search
 ## Installation & Setup
 ```bash
 # Clone and install dependencies
-git clone [<repo-url>](https://github.com/malznguyen/WebApp)
+git clone https://github.com/malznguyen/WebApp
 cd WebApp
 python3 -m venv venv
 source venv/bin/activate
