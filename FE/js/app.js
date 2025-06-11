@@ -32,6 +32,16 @@ function app() {
             taskId: null
         },
 
+        metadataSettings: {
+            autoAnalyze: false
+        },
+
+        metadataState: {
+            isAnalyzing: false,
+            result: null,
+            error: null
+        },
+
         // ===== IMAGE SEARCH STATE =====
         searchOptions: {
             socialOnly: false
@@ -289,6 +299,10 @@ function app() {
                     await this.delay(500);
                     this.analyzeImageWithVision();
                 }
+                if (this.metadataSettings.autoAnalyze) {
+                    await this.delay(300);
+                    this.analyzeImageMetadata();
+                }
             } catch (error) {
                 this.addLogEntry('error', `Image processing failed for ${file.name}: ${error.message}`);
                 this.showNotification('error', 'Image Processing Error', error.message);
@@ -318,6 +332,9 @@ function app() {
             this.searchProgress = 0;
             this.searchStatus = '';
             this.clearVisionResult();
+            this.metadataState.result = null;
+            this.metadataState.error = null;
+            this.metadataState.isAnalyzing = false;
         },
 
         async startImageSearch() {
@@ -552,6 +569,38 @@ function app() {
             this.visionState.progress = 0;
             this.visionState.status = '';
             this.addLogEntry('info', 'Vision analysis result cleared');
+        },
+
+        async analyzeImageMetadata() {
+            if (!this.selectedImage || this.metadataState.isAnalyzing) return;
+            this.metadataState.isAnalyzing = true;
+            this.metadataState.error = null;
+            this.metadataState.result = null;
+            try {
+                if (this.backendConnected) {
+                    const res = await eel.analyze_image_metadata(this.selectedImage.data, this.selectedImage.name, false)();
+                    if (res && res.success) {
+                        this.metadataState.result = ImageMetadata.formatForDisplay(res);
+                        this.addLogEntry('info', `Metadata extracted for ${this.selectedImage.name}`);
+                    } else {
+                        this.metadataState.error = res.error || 'Metadata extraction failed';
+                        this.addLogEntry('error', `Metadata extraction failed: ${this.metadataState.error}`);
+                    }
+                } else {
+                    this.metadataState.error = 'Backend not connected';
+                }
+            } catch (err) {
+                this.metadataState.error = err.message || 'Error';
+            } finally {
+                this.metadataState.isAnalyzing = false;
+            }
+        },
+
+        exportImageMetadata(format) {
+            if (this.metadataState.result) {
+                const base = this.selectedImage?.name?.replace(/\.[^/.]+$/, '') || 'image_metadata';
+                ImageMetadata.exportMetadata(this.metadataState.result, base, format);
+            }
         },
 
         // ===== DOCUMENT PROCESSING METHODS (UPDATED FOR SUMMARY MODE) =====

@@ -45,6 +45,7 @@ try:
         process_documents_batch_web  
     )
     from BE.core.image_processing import validate_image_upload
+    from BE.core.image_metadata import ImageMetadataExtractor
     logger.info("✅ Core modules imported successfully.")
 except ImportError as e:
     logger.critical(f"❌ Failed to import a core backend module: {e}", exc_info=True)
@@ -359,6 +360,17 @@ def describe_image_async_web(image_data_base64: str, filename: str, language: st
     thread.start()
     logger.debug(f"Started async vision thread with ID: {task_id}")
     return task_id
+
+@eel.expose
+def analyze_image_metadata(image_data_base64: str, filename: str, include_sensitive: bool = False) -> Dict[str, Any]:
+    """Extract image metadata and fingerprints from base64 image data."""
+    try:
+        image_bytes = validate_base64_data(image_data_base64, "data:image")
+        extractor = ImageMetadataExtractor(privacy_safe=not include_sensitive)
+        return extractor.extract_metadata(image_bytes, filename)
+    except Exception as e:
+        logger.error(f"Metadata analysis failed for '{filename}': {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
     """Validates and normalizes document processing settings received from the frontend."""
