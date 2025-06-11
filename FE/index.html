@@ -207,6 +207,48 @@
                     </div>
 
                     <div x-show="selectedImage" class="card p-4">
+                        <h4 class="font-medium text-gray-900 mb-3 flex items-center">
+                            <i class="fas fa-info-circle mr-2 text-indigo-600"></i> Image Metadata
+                        </h4>
+                        <div class="space-y-3">
+                            <label class="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-50 rounded-md">
+                                <input type="checkbox" x-model="metadataSettings.autoAnalyze" class="form-checkbox text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm text-gray-700">Auto-analyze on upload</span>
+                            </label>
+                            <button class="btn btn-secondary w-full" @click="analyzeImageMetadata()" :disabled="metadataState.isAnalyzing">
+                                <span x-show="!metadataState.isAnalyzing"><i class="fas fa-chart-bar mr-2"></i>Analyze Metadata</span>
+                                <span x-show="metadataState.isAnalyzing" class="flex items-center justify-center">
+                                    <div class="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
+                                    Processing...
+                                </span>
+                            </button>
+                        </div>
+                        <div x-show="metadataState.error" class="text-xs text-red-700 bg-red-100 p-2 mt-2 rounded-md" x-text="metadataState.error"></div>
+                        <div x-show="metadataState.result" class="mt-2 text-xs space-y-1">
+                            <template x-for="(val, key) in metadataState.result.basic" :key="key">
+                                <div class="flex justify-between"><span class="text-gray-500" x-text="key"></span><span class="font-medium text-gray-800" x-text="val"></span></div>
+                            </template>
+                            <div class="pt-1" x-show="Object.keys(metadataState.result.exif || {}).length">
+                                <h5 class="text-xs font-semibold text-gray-700 mb-1">EXIF</h5>
+                                <template x-for="(val, key) in metadataState.result.exif" :key="'exif-' + key">
+                                    <div class="flex justify-between"><span class="text-gray-500" x-text="key"></span><span class="font-medium text-gray-800" x-text="val"></span></div>
+                                </template>
+                            </div>
+                            <div class="pt-1">
+                                <h5 class="text-xs font-semibold text-gray-700 mb-1">Fingerprints</h5>
+                                <template x-for="(val, key) in metadataState.result.fingerprints" :key="'fp-' + key">
+                                    <div class="flex justify-between"><span class="text-gray-500" x-text="key"></span><span class="font-mono break-all text-gray-800" x-text="val"></span></div>
+                                </template>
+                            </div>
+                            <p x-show="metadataState.result.warnings && metadataState.result.warnings.length" class="text-xxs text-yellow-700 bg-yellow-100 p-1 rounded mt-1" x-text="metadataState.result.warnings.join('; ')"></p>
+                            <div class="flex space-x-2 pt-1">
+                                <button class="btn btn-secondary btn-sm" @click="exportImageMetadata('json')"><i class="fas fa-download mr-1"></i>JSON</button>
+                                <button class="btn btn-secondary btn-sm" @click="exportImageMetadata('csv')"><i class="fas fa-file-csv mr-1"></i>CSV</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div x-show="selectedImage" class="card p-4">
                         <h4 class="font-medium text-gray-900 mb-3"><i
                                 class="fas fa-search mr-2 text-gray-500"></i>Reverse Search</h4>
                         <label class="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded-md">
@@ -1007,6 +1049,7 @@
     <script type="text/javascript" src="/eel.js"></script>
     <script src="js/components/common.js"></script>
     <script src="js/components/image-vision.js"></script>
+    <script src="js/components/image-metadata.js"></script>
     <script src="js/utils/notifications.js"></script>
     <script src="js/utils/chart-renderer.js"></script>
     <script src="js/app.js"></script>
