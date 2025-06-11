@@ -35,6 +35,7 @@ try:
         SERP_API_KEY, IMGUR_CLIENT_ID, DEEPSEEK_API_KEY, GROK_API_KEY,
         CHATGPT_API_KEY, WINDOW_WIDTH, WINDOW_HEIGHT
     )
+    from BE.config import constants
     from BE.core.api_client import validate_api_keys
     from BE.core.search_thread import search_image_sync
     from BE.core.document_api import (
@@ -95,18 +96,25 @@ def safe_bool(value: Any, default: bool = False) -> bool:
         return default
 
 def validate_base64_data(data: str, expected_prefix: Optional[str] = None) -> bytes:
-    """Validates and decodes base64 encoded data."""
+    """Validates and decodes base64 encoded data with size checks."""
     if not data or not isinstance(data, str):
         raise ValueError("Invalid or empty base64 data provided.")
     try:
         actual_data = data
         if data.startswith('data:'):
-            if ',' not in data: raise ValueError("Invalid base64 data URL format: missing comma separator.")
+            if ',' not in data:
+                raise ValueError("Invalid base64 data URL format: missing comma separator.")
             header, actual_data = data.split(',', 1)
             if expected_prefix and not header.startswith(expected_prefix):
-                raise ValueError(f"Invalid data URL prefix. Expected '{expected_prefix}', got '{header}'.")
+                raise ValueError(
+                    f"Invalid data URL prefix. Expected '{expected_prefix}', got '{header}'.")
         decoded_bytes = base64.b64decode(actual_data)
-        if not decoded_bytes: raise ValueError("Decoded base64 data is empty.")
+        if not decoded_bytes:
+            raise ValueError("Decoded base64 data is empty.")
+        from BE.config.constants import MAX_BASE64_DECODE_SIZE
+        if len(decoded_bytes) > MAX_BASE64_DECODE_SIZE:
+            size_mb = MAX_BASE64_DECODE_SIZE / (1024 * 1024)
+            raise ValueError(f"Decoded data exceeds limit of {size_mb:.0f}MB.")
         return decoded_bytes
     except base64.binascii.Error as b64_err:
         raise ValueError(f"Base64 decoding failed: {b64_err}")
@@ -235,7 +243,14 @@ def process_image_from_url(url: str) -> Dict[str, Any]:
         if 'image' not in content_type:
             return {'success': False, 'error': f"URL did not point to a direct image. Content type was '{content_type}'."}
 
+        max_bytes = constants.MAX_IMAGE_SIZE_MB * 2 * 1024 * 1024
+        content_length = int(response.headers.get('content-length', 0))
+        if content_length and content_length > max_bytes:
+            return {'success': False, 'error': 'Image exceeds allowed size limit.'}
+
         image_bytes = response.content
+        if len(image_bytes) > max_bytes:
+            return {'success': False, 'error': 'Image exceeds allowed size limit after download.'}
         validation = validate_image_upload(image_bytes)
         if not validation['valid']:
              return {'success': False, 'error': f"Invalid image from URL: {validation['error']}"}

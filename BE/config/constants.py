@@ -6,7 +6,7 @@ MAX_RESULTS_TO_DISPLAY = 100  # Hiển thị tối đa 100 kết quả
 
 # Timeout 
 SEARCH_TIMEOUT_MS = 100000 
-API_TIMEOUT_SEC = 180  
+API_TIMEOUT_SEC = 180
 
 # Document summary
 MAX_CHUNK_SIZE = 100000  # Kích thước tối đa của một chunk văn bản
@@ -21,6 +21,9 @@ MAX_IMAGE_SIZE_MB = 5
 # Tỷ lệ nén ảnh
 IMAGE_RESIZE_RATIO = 0.7
 IMAGE_QUALITY = 85
+
+# Maximum size (in bytes) allowed for decoded base64 payloads
+MAX_BASE64_DECODE_SIZE = 50 * 1024 * 1024  # 50MB safety limit
 
 # Danh sách các domain mạng xã hội nổi tiếng cần lọc
 SOCIAL_MEDIA_DOMAINS = [
