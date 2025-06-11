@@ -9,3 +9,5 @@ openai
 python-dotenv
 eel
 cloudinary
+piexif>=1.1.3
+imagehash>=4.3.1
