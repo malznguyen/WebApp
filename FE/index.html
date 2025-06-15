@@ -594,40 +594,18 @@
                         </div>
                     </div>
 
-                    <div class="card bg-white rounded-lg shadow">
-                        <div @click="settingsPanels.aiModels = !settingsPanels.aiModels"
-                            class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
-                            :class="!settingsPanels.aiModels ? 'rounded-lg' : 'rounded-t-lg'">
-                            <div class="flex items-center">
-                                <i class="fas fa-robot mr-2 text-gray-500 w-5 text-center"></i>
-                                <h3 class="font-medium text-sm text-gray-800">AI Models</h3>
-                            </div>
-                            <div class="flex items-center">
-                                <span class="text-xs text-gray-500 mr-2"
-                                    x-text="Object.values(aiModels).filter(Boolean).length + ' active'"></span>
-                                <i class="fas text-xs text-gray-400 transform transition-transform duration-200"
-                                    :class="settingsPanels.aiModels ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-                            </div>
+                    <div class="card bg-white rounded-lg shadow p-3 flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <i class="fas fa-robot text-gray-500 w-5 text-center"></i>
+                            <h3 class="font-medium text-sm text-gray-800">Enable AI Summarization</h3>
                         </div>
-                        <div x-show="settingsPanels.aiModels" x-collapse.duration.300ms
-                            class="px-4 pb-4 pt-3 border-t border-gray-200">
-                            <div class="space-y-3">
-                                <template x-for="modelKey in Object.keys(aiModels)" :key="modelKey">
-                                    <label class="flex items-center justify-between cursor-pointer">
-                                        <span class="text-sm text-gray-700"
-                                            x-text="modelKey.charAt(0).toUpperCase() + modelKey.slice(1)"></span>
-                                        <div class="relative">
-                                            <input type="checkbox" :id="'toggle-' + modelKey"
-                                                class="sr-only toggle-checkbox" x-model="aiModels[modelKey]">
-                                            <div class="toggle-label block bg-gray-200 w-10 h-5 rounded-full"></div>
-                                            <div
-                                                class="toggle-ball absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full shadow transform">
-                                            </div>
-                                        </div>
-                                    </label>
-                                </template>
+                        <label class="flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only" x-model="useAI">
+                            <div class="toggle-label block bg-gray-200 w-10 h-5 rounded-full relative">
+                                <div class="toggle-ball absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full shadow transform"
+                                    :class="useAI ? 'translate-x-full' : ''"></div>
                             </div>
-                        </div>
+                        </label>
                     </div>
 
                     <div class="card bg-white rounded-lg shadow">
@@ -737,9 +715,8 @@
                                     :class="contentTab === 'results' ? 'tab-button active text-sm' : 'tab-button text-sm'"
                                     class="px-3 py-1.5 font-medium">
                                     <i class="fas fa-wand-magic-sparkles mr-1.5"></i> AI Results
-                                    <span x-show="aiResults.length > 0 && !isProcessing"
-                                        x-text="'(' + aiResults.filter(r => r && !r.is_error).length + ')'"
-                                        class="text-xs ml-0.5 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full"></span>
+                                    <span x-show="aiResult && !isProcessing"
+                                        class="text-xs ml-0.5 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">1</span>
                                 </button>
                                 <button
                                     @click="contentTab = 'analysis'; if (analysisData && analysisData.common_words && !analysisData.error) renderWordCloud(analysisData.common_words);"
@@ -778,39 +755,31 @@
                             </div>
 
                             <div x-show="contentTab === 'results'" class="space-y-5">
-                                <div x-show="isProcessing && aiResults.length === 0"
+                                <div x-show="isProcessing && !aiResult"
                                     class="flex flex-col items-center justify-center h-64 text-center">
                                     <div class="progress-circular border-blue-500 mx-auto mb-4 h-10 w-10"></div>
                                     <p class="text-gray-600 text-lg font-medium">Generating AI results...</p>
                                 </div>
-                                <div x-show="!isProcessing && aiResults.length === 0 && activePreviewFileId"
+                                <div x-show="!isProcessing && !aiResult && activePreviewFileId"
                                     class="flex flex-col items-center justify-center h-64 text-center">
                                     <i class="fas fa-robot text-5xl text-gray-300 mb-5"></i>
                                     <p class="text-gray-500 text-lg">No AI results for this item.</p>
                                     <p class="text-gray-400">Process the item with AI models enabled to see summaries.
                                     </p>
                                 </div>
-                                <div x-show="!activePreviewFileId && aiResults.length === 0"
+                                <div x-show="!activePreviewFileId && !aiResult"
                                     class="flex flex-col items-center justify-center h-64 text-center">
                                     <i class="fas fa-hand-pointer text-5xl text-gray-300 mb-5"></i>
                                     <p class="text-gray-500 text-lg">Select an item and process it.</p>
                                 </div>
-                                <template x-for="result in aiResults" :key="result.model + Math.random()">
-                                    <div class="card p-3.5 bg-gray-50/60 border border-gray-200/80 rounded-lg">
-                                        <h4 class="font-semibold text-gray-800 mb-2 flex items-center text-base">
-                                            <i
-                                                :class="getAIModelIcon(result.model) + ' mr-2 text-lg text-blue-600'"></i>
-                                            <span
-                                                x-text="result.model + ( (processingMode === 'batch' || (activePreviewFileId && processingQueue.find(i=>i.id === activePreviewFileId)?.isBatchMember)) && (result.model !== 'Error') ? ' Batch Synthesis' : ' Summary')"></span>
-                                        </h4>
-                                        <div x-show="result.is_error"
-                                            class="text-sm text-red-700 bg-red-100 p-2.5 rounded-md border border-red-200 whitespace-pre-wrap"
-                                            x-text="result.content"></div>
-                                        <div x-show="!result.is_error"
-                                            class="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed selection:bg-yellow-200 selection:text-black"
-                                            x-html="highlightSearchTerm(result.content, searchTerm)"></div>
-                                    </div>
-                                </template>
+                                <div x-show="aiResult" class="card p-3.5 bg-gray-50/60 border border-gray-200/80 rounded-lg">
+                                    <h4 class="font-semibold text-gray-800 mb-2 flex items-center text-base">
+                                        <i :class="getAIModelIcon(aiResult.model) + ' mr-2 text-lg text-blue-600'"></i>
+                                        <span x-text="aiResult.model + ( (processingMode === 'batch' || (activePreviewFileId && processingQueue.find(i=>i.id === activePreviewFileId)?.isBatchMember)) && (aiResult.model !== 'Error') ? ' Batch Synthesis' : ' Summary')"></span>
+                                    </h4>
+                                    <div x-show="aiResult.is_error" class="text-sm text-red-700 bg-red-100 p-2.5 rounded-md border border-red-200 whitespace-pre-wrap" x-text="aiResult.content"></div>
+                                    <div x-show="!aiResult.is_error" class="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed selection:bg-yellow-200 selection:text-black" x-html="highlightSearchTerm(aiResult.content, searchTerm)"></div>
+                                </div>
                             </div>
 
                             <div x-show="contentTab === 'analysis'">

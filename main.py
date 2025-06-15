@@ -32,7 +32,7 @@ VISION_MODULE_AVAILABLE = False
 try:
     from BE.utils.helpers import ensure_dir_exists
     from BE.config.settings import (
-        SERP_API_KEY, IMGUR_CLIENT_ID, DEEPSEEK_API_KEY, GROK_API_KEY,
+        SERP_API_KEY, IMGUR_CLIENT_ID,
         CHATGPT_API_KEY, WINDOW_WIDTH, WINDOW_HEIGHT
     )
     from BE.config import constants
@@ -179,8 +179,6 @@ def get_app_config():
                 'status': 'ready',
                 'has_serp_api': api_keys_validation.get('has_serp_api', False),
                 'has_imgur': api_keys_validation.get('has_imgur', False),
-                'has_deepseek': bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.strip()),
-                'has_grok': bool(GROK_API_KEY and GROK_API_KEY.strip()),
                 'has_chatgpt': bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
                 'has_vision': VISION_MODULE_AVAILABLE and bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip()),
                 'vision_available': VISION_MODULE_AVAILABLE,
@@ -203,8 +201,7 @@ def get_app_config():
             logger.error(f"Critical error loading application config: {e}", exc_info=True)
             app_config = {
                 'status': 'error', 'error': str(e), 'ready': False,
-                'has_serp_api': False, 'has_imgur': False, 'has_deepseek': False,
-                'has_grok': False, 'has_chatgpt': False, 'has_vision': False,
+                'has_serp_api': False, 'has_imgur': False, 'has_chatgpt': False, 'has_vision': False,
                 'vision_available': False, 'supported_formats': [],
                 'version': 'N/A', 'missing_keys': ['Configuration load failed']
             }
@@ -391,12 +388,8 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
     """Validates and normalizes document processing settings received from the frontend."""
     normalized_settings: Dict[str, Any] = {}
     try:
-        ai_models_selection = settings_from_frontend.get('ai_models', {})
-        if not isinstance(ai_models_selection, dict): ai_models_selection = {}
-        
-        normalized_settings['deepseek_key'] = DEEPSEEK_API_KEY if safe_bool(ai_models_selection.get('deepseek', False)) else None
-        normalized_settings['grok_key'] = GROK_API_KEY if safe_bool(ai_models_selection.get('grok', False)) else None
-        normalized_settings['chatgpt_key'] = CHATGPT_API_KEY if safe_bool(ai_models_selection.get('chatgpt', False)) else None
+        use_ai = safe_bool(settings_from_frontend.get('use_ai', False))
+        normalized_settings['chatgpt_key'] = CHATGPT_API_KEY if use_ai else None
         
         normalized_settings['summary_mode'] = settings_from_frontend.get('summary_mode', 'full')
         normalized_settings['summary_level'] = safe_int(settings_from_frontend.get('detail_level', 50), default=50, min_val=10, max_val=90)
@@ -412,8 +405,6 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
     except Exception as e:
         logger.error(f"Error validating processing settings: {e}", exc_info=True)
         return {
-            'deepseek_key': None,
-            'grok_key': None,
             'chatgpt_key': None,
             'summary_mode': 'full',
             'summary_level': 50,
@@ -459,27 +450,26 @@ def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, A
         processing_result = process_document(**normalized_processing_settings, file_path=doc_file_path)
         
         # This formatting logic should be consistent everywhere
-        ai_results_output = []
-        for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
-            content = processing_result.get(model_key)
-            if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
-                is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
-                ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
+        ai_result = None
+        content = processing_result.get('chatgpt')
+        if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
+            is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
+            ai_result = {'model': 'ChatGPT', 'content': content, 'is_error': is_error_msg}
         
         overall_error_message = processing_result.get('error')
-        has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output if isinstance(res, dict))
+        has_any_errors = bool(overall_error_message) or (ai_result is not None and ai_result.get('is_error'))
         
         return {
             'success': not bool(overall_error_message),
             'original_text': processing_result.get('original_text', ''),
-            'ai_results': ai_results_output,
+            'ai_result': ai_result,
             'analysis': processing_result.get('analysis', {}),
             'error': overall_error_message,
             'has_errors': has_any_errors
         }
     except Exception as e:
         logger.error(f"Unexpected error in process_document_web for '{file_basename}': {e}", exc_info=True)
-        return {'success': False, 'error': f"An unexpected error occurred: {e}", 'original_text': '', 'ai_results': [], 'analysis': {}, 'has_errors': True}
+        return {'success': False, 'error': f"An unexpected error occurred: {e}", 'original_text': '', 'ai_result': None, 'analysis': {}, 'has_errors': True}
 
 @eel.expose
 def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[str, Any]]], settings: Dict[str, Any]) -> str:
@@ -517,21 +507,20 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                 logger.info(f"Batch processing result structure: {list(raw_processing_result.keys())}")
 
                 # Format batch result for frontend
-                ai_results_output = []
-                for model_key, model_name in [('deepseek_synthesis', 'DeepSeek'), ('grok_synthesis', 'Grok'), ('chatgpt_synthesis', 'ChatGPT')]:
-                    content = raw_processing_result.get(model_key)
-                    if content and content != "<Not executed: No API key or model not selected>":
-                         is_error_msg = isinstance(content, str) and ("Error:" in content)
-                         ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
+                ai_result = None
+                content = raw_processing_result.get('chatgpt_synthesis')
+                if content and content != "<Not executed: No API key>":
+                    is_error_msg = isinstance(content, str) and ("Error:" in content)
+                    ai_result = {'model': 'ChatGPT', 'content': content, 'is_error': is_error_msg}
                 
                 final_result_for_frontend = {
                     'success': raw_processing_result.get('success', False),
-                    'ai_results': ai_results_output,
+                    'ai_result': ai_result,
                     'processed_files': raw_processing_result.get('processed_files', []),
                     'failed_files': raw_processing_result.get('failed_files', []),
                     'concatenated_text_char_count': raw_processing_result.get('concatenated_text_char_count', 0),
                     'overall_error': raw_processing_result.get('overall_error'),
-                    'has_errors': bool(raw_processing_result.get('overall_error')) or any(r.get('is_error') for r in ai_results_output)
+                    'has_errors': bool(raw_processing_result.get('overall_error')) or (ai_result is not None and ai_result.get('is_error'))
                 }
 
             else: # SINGLE ITEM PROCESSING (File or Text)
@@ -551,20 +540,19 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     raw_processing_result = process_document(file_path=temp_file_for_this_task, **normalized_settings)
                 
                 # Format single item result for frontend
-                ai_results_output = []
-                for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
-                    content = raw_processing_result.get(model_key)
-                    if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
-                        is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
-                        ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
+                ai_result = None
+                content = raw_processing_result.get('chatgpt')
+                if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
+                    is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
+                    ai_result = {'model': 'ChatGPT', 'content': content, 'is_error': is_error_msg}
                 
                 overall_error_message = raw_processing_result.get('error')
-                has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output)
+                has_any_errors = bool(overall_error_message) or (ai_result is not None and ai_result.get('is_error'))
                 
                 final_result_for_frontend = {
                     'success': not bool(overall_error_message),
                     'original_text': raw_processing_result.get('original_text', ''),
-                    'ai_results': ai_results_output,
+                    'ai_result': ai_result,
                     'analysis': raw_processing_result.get('analysis', {}),
                     'error': overall_error_message,
                     'has_errors': has_any_errors

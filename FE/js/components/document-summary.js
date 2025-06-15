@@ -66,9 +66,9 @@ const DocumentSummary = {
     },
 
     // Calculate processing time estimate
-    estimateProcessingTime(fileSize, aiModels) {
+    estimateProcessingTime(fileSize, useAI) {
         const baseTime = 5; // seconds per MB
-        const modelMultiplier = Object.values(aiModels).filter(Boolean).length || 1;
+        const modelMultiplier = useAI ? 1.5 : 1;
         const sizeInMB = fileSize / (1024 * 1024);
         
         return Math.ceil(sizeInMB * baseTime * modelMultiplier);
@@ -293,10 +293,7 @@ const DocumentSummary = {
             errors.push('Detail level must be between 10 and 90');
         }
 
-        const hasAnyModel = Object.values(settings.aiModels || {}).some(Boolean);
-        if (!hasAnyModel) {
-            errors.push('At least one AI model must be selected');
-        }
+
 
         return {
             valid: errors.length === 0,

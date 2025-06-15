@@ -63,18 +63,14 @@ function app() {
         detailLevel: 50, // Only used when summaryMode === 'percentage'
         wordCountLimit: 500, // Only used when summaryMode === 'word-count'
 
-        // Previous state kept for backward compatibility (trong trường hợp có legacy code reference)
-        aiModels: {
-            deepseek: true,
-            grok: false,
-            chatgpt: false
-        },
+        // Simple toggle for AI usage
+        useAI: true,
         targetLanguage: null,
         isProcessing: false,
         processingQueue: [],
         activePreviewFileId: null,
         originalContent: '',
-        aiResults: [],
+        aiResult: null,
         analysisData: null,
         contentTab: 'original',
         canProcess: false,
@@ -83,7 +79,6 @@ function app() {
         settingsPanels: {
             summaryMode: true,    // 🆕 Mở mặc định để user thấy ngay
             processing: false,
-            aiModels: true,
             language: false,
             queue: true,
             advanced: false
@@ -229,10 +224,8 @@ function app() {
             this.addLogEntry('info', 'Loading application configuration from backend...');
             const config = await eel.get_app_config()();
             if (config && config.status === 'ready') {
-                this.addLogEntry('info', `Config loaded - SERP:${config.has_serp_api}, Imgur:${config.has_imgur}, DeepSeek:${config.has_deepseek}, Grok:${config.has_grok}, ChatGPT:${config.has_chatgpt}, Vision:${config.has_vision}`);
-                this.aiModels.deepseek = !!config.has_deepseek;
-                this.aiModels.grok = !!config.has_grok;
-                this.aiModels.chatgpt = !!config.has_chatgpt;
+                this.addLogEntry('info', `Config loaded - SERP:${config.has_serp_api}, Imgur:${config.has_imgur}, ChatGPT:${config.has_chatgpt}, Vision:${config.has_vision}`);
+                this.useAI = !!config.has_chatgpt;
                 this.canSearch = !!(config.has_serp_api && config.has_imgur);
                 this.visionCapabilities.available = !!config.vision_available;
                 this.visionCapabilities.apiConfigured = !!config.has_vision;
@@ -243,9 +236,7 @@ function app() {
 
         getMockConfig() {
             this.addLogEntry('info', 'Setting mock configuration.');
-            this.aiModels.deepseek = true;
-            this.aiModels.grok = false;
-            this.aiModels.chatgpt = true;
+            this.useAI = true;
         },
 
         setupEventListeners() {
@@ -704,7 +695,7 @@ function app() {
             if (fileItem) {
                 this.activePreviewFileId = itemId;
                 this.addLogEntry('info', `Setting active preview to: ${fileItem.name}`);
-                this.aiResults = [];
+                this.aiResult = null;
                 this.analysisData = null;
                 this.contentTab = 'original';
 
@@ -726,7 +717,7 @@ function app() {
                 this.addLogEntry('warning', `Could not set active preview: item ID ${itemId} not found in queue.`);
                 this.activePreviewFileId = null;
                 this.originalContent = '';
-                this.aiResults = [];
+                this.aiResult = null;
                 this.analysisData = null;
             }
         },
@@ -777,7 +768,7 @@ function app() {
             if (this.activePreviewFileId === itemId) {
                 this.originalContent = '';
                 this.activePreviewFileId = null;
-                this.aiResults = [];
+                this.aiResult = null;
                 this.analysisData = null;
                 if (this.processingQueue.length > 0) {
                     await this.setActivePreviewFile(this.processingQueue[0].id);
@@ -787,7 +778,7 @@ function app() {
             } else if (this.processingQueue.length === 0) {
                 this.originalContent = '';
                 this.activePreviewFileId = null;
-                this.aiResults = [];
+                this.aiResult = null;
                 this.analysisData = null;
                 this.addLogEntry('info', 'Processing queue is empty. Cleared content areas.');
             }
@@ -838,7 +829,7 @@ function app() {
 
             this.isProcessing = true;
             if (!currentRunIsBatch && itemsToProcess.length > 0) {
-                this.aiResults = [];
+                this.aiResult = null;
                 this.analysisData = null;
             }
 
@@ -896,7 +887,7 @@ function app() {
         buildProcessingSettings() {
             const settings = {
                 processing_mode: this.processingMode,
-                ai_models: this.aiModels,
+                use_ai: this.useAI,
                 language: this.targetLanguage,
                 summary_mode: this.summaryMode,  // 'full' | 'percentage' | 'word-count'
             };
@@ -941,32 +932,16 @@ function app() {
                 summaryModeText = ' (full summary)';
             }
 
-            if (this.aiModels.deepseek) {
-                demoAiResults.push({
-                    model: 'DeepSeek',
-                    content: `[DEMO] DeepSeek summary for ${item.name}${langText}${summaryModeText}.`,
-                    is_error: false
-                });
-            }
-            if (this.aiModels.grok) {
-                demoAiResults.push({
-                    model: 'Grok',
-                    content: `[DEMO] Grok for ${item.name}${langText}${summaryModeText}.`,
-                    is_error: false
-                });
-            }
-            if (this.aiModels.chatgpt) {
+            if (this.useAI) {
                 demoAiResults.push({
                     model: 'ChatGPT',
                     content: `[DEMO] ChatGPT for ${item.name}${langText}${summaryModeText}.`,
                     is_error: false
                 });
-            }
-
-            if (demoAiResults.length === 0) {
+            } else {
                 demoAiResults.push({
                     model: 'N/A',
-                    content: '[DEMO] No AI models selected.',
+                    content: '[DEMO] AI disabled.',
                     is_error: true
                 });
             }
@@ -984,7 +959,7 @@ function app() {
             const demoResultDict = {
                 success: true,
                 original_text: demoOriginalContent,
-                ai_results: demoAiResults,
+                ai_result: demoAiResults[0],
                 analysis: demoAnalysisData,
                 error: null,
                 has_errors: demoAiResults.some(r => r.is_error)
@@ -996,7 +971,7 @@ function app() {
 
             if (currentItemIsActive) {
                 this.originalContent = demoResultDict.original_text;
-                this.aiResults = demoResultDict.ai_results;
+                this.aiResult = demoResultDict.ai_result;
                 this.analysisData = demoResultDict.analysis;
                 if (this.analysisData && this.analysisData.common_words && this.contentTab === 'analysis') {
                     this.$nextTick(() => this.renderWordCloud(this.analysisData.common_words));
@@ -1013,7 +988,7 @@ function app() {
 
                 if (this.activePreviewFileId === item.id) {
                     this.originalContent = result.original_text || `Content for ${item.name} unavailable.`;
-                    this.aiResults = result.ai_results || [];
+                    this.aiResult = result.ai_result || null;
                     this.analysisData = result.analysis || null;
                     if (this.analysisData && this.analysisData.common_words && this.contentTab === 'analysis' && !this.analysisData.error) {
                         this.$nextTick(() => this.renderWordCloud(this.analysisData.common_words));
@@ -1036,7 +1011,7 @@ function app() {
                 this.showNotification('error', 'Backend Error', errorDetail);
                 if (this.activePreviewFileId === item.id) {
                     this.originalContent = `Failed to process ${item.name}.`;
-                    this.aiResults = [];
+                    this.aiResult = null;
                     this.analysisData = null;
                 }
             }
@@ -1108,11 +1083,11 @@ function app() {
                 });
 
                 this.originalContent = `Batch (ID: ${processId}) Results:\nProcessed: ${resultDict.processed_files?.join(', ') || 'None'}\nFailed: ${resultDict.failed_files?.map(f => f[0]).join(', ') || 'None'}\nConcatenated Chars: ${resultDict.concatenated_text_char_count || 0}`;
-                this.aiResults = resultDict.ai_results || [];
+                this.aiResult = resultDict.ai_result || null;
                 this.analysisData = null;
                 this.showNotification(resultDict.success && !resultDict.has_errors ? 'success' : 'warning',
                     'Batch Process Complete', `Task (ID: ${processId}) finished. ${resultDict.error || ''}`);
-                if (this.aiResults.length > 0) this.contentTab = 'results';
+                if (this.aiResult) this.contentTab = 'results';
             } else {
                 processSingleItemResult(itemOrItemIds, resultDict);
             }
@@ -1137,7 +1112,7 @@ function app() {
                     this.addLogEntry('error', `Processing Error for '${item.name}' (Eel ID: ${processId}): ${errMsg}`);
                     if (this.activePreviewFileId === item.id) {
                         this.originalContent = `Error processing ${item.name}: ${errMsg}`;
-                        this.aiResults = [{ model: 'Error', content: `Processing failed: ${errMsg}`, is_error: true }];
+                        this.aiResult = { model: 'Error', content: `Processing failed: ${errMsg}`, is_error: true };
                         this.analysisData = null;
                     }
                 }
@@ -1325,14 +1300,13 @@ function app() {
                 contentToCopy = this.originalContent;
                 contentType = 'Original Content';
             } else if (this.contentTab === 'results') {
-                contentType = 'AI Results';
-                this.aiResults.forEach(result => {
-                    if (result && !result.is_error && result.content) {
-                        contentToCopy += `--- ${result.model} ---\n${result.content}\n\n`;
-                    } else if (result && result.is_error && result.content) {
-                        contentToCopy += `--- ${result.model} ERROR ---\n${result.content}\n\n`;
-                    }
-                });
+                contentType = 'AI Result';
+                const result = this.aiResult;
+                if (result && !result.is_error && result.content) {
+                    contentToCopy = result.content;
+                } else if (result && result.is_error && result.content) {
+                    contentToCopy = `ERROR: ${result.content}`;
+                }
             } else if (this.contentTab === 'analysis' && this.analysisData) {
                 contentType = 'Analysis Data';
                 if (this.analysisData.error) {
