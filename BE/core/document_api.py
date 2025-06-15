@@ -303,95 +303,6 @@ def _call_ai_model(client_config: Dict[str, Any], model_name: str, messages: Lis
         raise ValueError("Invalid or empty API response structure from AI model.")
 
 
-def summarize_with_deepseek(text: str,
-                            api_key: str,
-                            summary_mode: str = 'full',
-                            summary_level: int = 50,
-                            word_count_limit: int = 500,
-                            target_language_code: Optional[str] = None,
-                            is_synthesis_prompt: bool = False,
-                            is_batch_synthesis: bool = False) -> str:
-    if not api_key: return "DeepSeek Error: API Key not configured."
-    if not text or not text.strip(): return "DeepSeek Error: Input text for summarization is empty."
-    from config.constants import API_TIMEOUT_SEC 
-
-    target_lang_full = _get_language_full_name(target_language_code)
-    lang_instruction = f"IMPORTANT: Please provide the output ONLY in {target_lang_full}." if target_language_code else ""
-    system_role_lang_enforce = f" You MUST provide the output exclusively in {target_lang_full}." if target_language_code else ""
-
-    prompt_text, system_content_base = _create_summary_prompt(
-        text,
-        summary_mode,
-        summary_level,
-        word_count_limit,
-        lang_instruction,
-        is_synthesis_prompt,
-        is_batch_synthesis,
-    )
-    final_system_content = f"{system_content_base}{system_role_lang_enforce}"
-
-    logger.debug(
-        f"Calling DeepSeek API ({'BATCH_SYNTHESIS' if is_batch_synthesis else ('SYNTHESIS' if is_synthesis_prompt else 'SUMMARY')}, "
-        f"Mode: {summary_mode}, Lang: {target_lang_full})..."
-    )
-    try:
-        summary = _call_ai_model(
-            client_config={'api_key': api_key, 'base_url': "https://api.deepseek.com"},
-            model_name="deepseek-chat",
-            messages=[{"role": "system", "content": final_system_content}, {"role": "user", "content": prompt_text}],
-            max_tokens=8048, temperature=0.5, timeout=API_TIMEOUT_SEC
-        )
-        logger.info(f"DeepSeek returned content ({target_lang_full}), {len(summary)} chars.")
-        return summary
-    except Exception as e:
-        return _handle_api_error("DeepSeek", e)
-
-
-def summarize_with_grok(text: str,
-                        api_key: str,
-                        summary_mode: str = 'full',
-                        summary_level: int = 50,
-                        word_count_limit: int = 500,
-                        target_language_code: Optional[str] = None,
-                        is_synthesis_prompt: bool = False,
-                        is_batch_synthesis: bool = False) -> str:
-    if not api_key: return "Grok Error: API Key not configured."
-    if not text or not text.strip(): return "Grok Error: Input text for summarization is empty."
-    from config.constants import API_TIMEOUT_SEC
-
-    target_lang_full = _get_language_full_name(target_language_code)
-    lang_instruction = f"\nVERY IMPORTANT: The final output MUST be in {target_lang_full}. No other languages are acceptable." if target_language_code else ""
-    system_role_lang_enforce = f" Always respond ONLY in {target_lang_full}. Strict adherence is mandatory." if target_language_code else ""
-    
-    prompt_text, system_content_base = _create_summary_prompt(
-        text,
-        summary_mode,
-        summary_level,
-        word_count_limit,
-        lang_instruction,
-        is_synthesis_prompt,
-        is_batch_synthesis,
-    )
-    if is_batch_synthesis or is_synthesis_prompt:
-        final_system_content = f"You are an AI that synthesizes information from provided text sources.{system_role_lang_enforce}"
-    else:
-        final_system_content = f"{system_content_base}{system_role_lang_enforce}"
-
-    logger.debug(
-        f"Calling Grok API ({'BATCH_SYNTHESIS' if is_batch_synthesis else ('SYNTHESIS' if is_synthesis_prompt else 'SUMMARY')}, "
-        f"Mode: {summary_mode}, Lang: {target_lang_full})..."
-    )
-    try:
-        summary = _call_ai_model(
-            client_config={'api_key': api_key, 'base_url': "https://api.x.ai/v1"},
-            model_name="grok-2", 
-            messages=[{"role": "system", "content": final_system_content}, {"role": "user", "content": prompt_text}],
-            max_tokens=8048, temperature=0.5, timeout=API_TIMEOUT_SEC
-        )
-        logger.info(f"Grok returned content ({target_lang_full}), {len(summary)} chars.")
-        return summary
-    except Exception as e:
-        return _handle_api_error("Grok", e)
 
 
 def summarize_with_chatgpt(text: str,
@@ -659,8 +570,6 @@ def process_document(
     file_path: Optional[str] = None,
     input_text_to_process: Optional[str] = None,
     is_synthesis_task: bool = False,
-    deepseek_key: Optional[str] = None,
-    grok_key: Optional[str] = None,
     chatgpt_key: Optional[str] = None,
     summary_mode: str = 'full',
     summary_level: int = 50,
@@ -680,7 +589,7 @@ def process_document(
         detail_str = "Full summary"
     logger.info(f"Starting [{processing_type}]: '{task_name}' ({detail_str}, {lang_str})")
 
-    results: Dict[str, Any] = {'original_text': None, 'deepseek': None, 'grok': None, 'chatgpt': None, 'analysis': None, 'error': None}
+    results: Dict[str, Any] = {'original_text': None, 'chatgpt': None, 'analysis': None, 'error': None}
     text_for_processing: Optional[str] = None
     analysis_error_msg: Optional[str] = None
 
@@ -730,11 +639,10 @@ def process_document(
             analysis_error_msg = f"System error during text analysis: {analysis_exception}"
             results['analysis'] = {'error': analysis_error_msg}
 
-        # 3. Call AI Models
+        # 3. Call AI Model (ChatGPT only)
         active_api_configs = []
-        if deepseek_key and deepseek_key.strip(): active_api_configs.append({'name': 'deepseek', 'func': summarize_with_deepseek, 'key': deepseek_key})
-        if grok_key and grok_key.strip(): active_api_configs.append({'name': 'grok', 'func': summarize_with_grok, 'key': grok_key})
-        if chatgpt_key and chatgpt_key.strip(): active_api_configs.append({'name': 'chatgpt', 'func': summarize_with_chatgpt, 'key': chatgpt_key})
+        if chatgpt_key and chatgpt_key.strip():
+            active_api_configs.append({'name': 'chatgpt', 'func': summarize_with_chatgpt, 'key': chatgpt_key})
 
         if active_api_configs:
             try: from config.constants import MAX_CHUNK_SIZE 
@@ -774,11 +682,11 @@ def process_document(
                         results[api_name_res] = f"{api_name_res.capitalize()} Error: System error during parallel execution ({exc_future})"
             logger.info(f"All AI model calls for '{task_name}' completed in {time.time() - overall_api_start_time:.2f}s.")
         else:
-             logger.info(f"No AI API keys provided or models enabled for '{task_name}'. Skipping AI summarization.")
-             results['deepseek'] = results['grok'] = results['chatgpt'] = "<Not executed: No API key or model not selected>"
+             logger.info(f"No ChatGPT API key provided for '{task_name}'. Skipping AI summarization.")
+             results['chatgpt'] = "<Not executed: No API key>"
         
         # Consolidate errors
-        api_error_messages = [results[api_key] for api_key in ['deepseek', 'grok', 'chatgpt'] if isinstance(results.get(api_key), str) and "Error:" in results[api_key]]
+        api_error_messages = [results['chatgpt']] if isinstance(results.get('chatgpt'), str) and "Error:" in results['chatgpt'] else []
         
         final_error_parts = []
         if results.get('error'): final_error_parts.append(results['error'])
@@ -797,9 +705,8 @@ def process_document(
         logger.critical(f"Unexpected critical system error in process_document for '{task_name}': {e_main}", exc_info=True)
         err_msg = f"Unexpected critical system error: {e_main}"
         return {
-            'original_text': text_for_processing or "", 'analysis': results.get('analysis', {'error': err_msg}),
-            'deepseek': results.get('deepseek', f"DeepSeek Error: {err_msg}"), 
-            'grok': results.get('grok', f"Grok Error: {err_msg}"), 
+            'original_text': text_for_processing or "",
+            'analysis': results.get('analysis', {'error': err_msg}),
             'chatgpt': results.get('chatgpt', f"ChatGPT Error: {err_msg}"),
             'error': err_msg
         }
@@ -807,8 +714,6 @@ def process_document(
 # 🚨 CRITICAL: BATCH SYNTHESIS FUNCTION - FIXED!
 def process_batch_synthesis(
     file_paths: List[str],
-    deepseek_key: Optional[str] = None,
-    grok_key: Optional[str] = None,
     chatgpt_key: Optional[str] = None,
     summary_mode: str = 'full',
     summary_level: int = 50,
@@ -835,8 +740,6 @@ def process_batch_synthesis(
         'processed_files': [],
         'failed_files': [],
         'concatenated_text_char_count': 0,
-        'deepseek_synthesis': None,
-        'grok_synthesis': None,
         'chatgpt_synthesis': None,
         'overall_error': None
     }
@@ -876,11 +779,7 @@ def process_batch_synthesis(
 
     # 2. Call AI Models for Batch Synthesis
     active_api_configs_batch = []
-    if deepseek_key and deepseek_key.strip(): 
-        active_api_configs_batch.append({'name': 'deepseek', 'func': summarize_with_deepseek, 'key': deepseek_key, 'result_key': 'deepseek_synthesis'})
-    if grok_key and grok_key.strip(): 
-        active_api_configs_batch.append({'name': 'grok', 'func': summarize_with_grok, 'key': grok_key, 'result_key': 'grok_synthesis'})
-    if chatgpt_key and chatgpt_key.strip(): 
+    if chatgpt_key and chatgpt_key.strip():
         active_api_configs_batch.append({'name': 'chatgpt', 'func': summarize_with_chatgpt, 'key': chatgpt_key, 'result_key': 'chatgpt_synthesis'})
 
     if active_api_configs_batch:
@@ -926,8 +825,8 @@ def process_batch_synthesis(
                     results[result_key] = f"{api_name_res.capitalize()} Error: System error during parallel batch execution ({exc_future_batch})"
         logger.info(f"All AI model calls for batch synthesis completed in {time.time() - overall_api_start_time:.2f}s.")
     else:
-        logger.info("No AI API keys provided or models enabled for batch synthesis. Skipping AI synthesis.")
-        results['deepseek_synthesis'] = results['grok_synthesis'] = results['chatgpt_synthesis'] = "<Not executed: No API key or model not selected>"
+        logger.info("No ChatGPT API key provided for batch synthesis. Skipping AI synthesis.")
+        results['chatgpt_synthesis'] = "<Not executed: No API key>"
 
     # Consolidate errors for batch
     batch_api_error_messages = []
@@ -973,9 +872,7 @@ def process_documents_batch_web(file_paths: List[str], settings: Dict[str, Any])
     word_count_limit = safe_int(settings.get('word_count_limit', 500), default=500, min_val=50, max_val=5000)
     target_language_code = settings.get('target_language_code')
     
-    # Get API keys from settings
-    deepseek_key = settings.get('deepseek_key')
-    grok_key = settings.get('grok_key')
+    # Get API key from settings
     chatgpt_key = settings.get('chatgpt_key')
     
     logger.info(f"process_documents_batch_web called with {len(file_paths)} files, settings: {settings}")
@@ -983,8 +880,6 @@ def process_documents_batch_web(file_paths: List[str], settings: Dict[str, Any])
     # Call the actual batch synthesis function
     return process_batch_synthesis(
         file_paths=file_paths,
-        deepseek_key=deepseek_key,
-        grok_key=grok_key,
         chatgpt_key=chatgpt_key,
         summary_mode=summary_mode,
         summary_level=summary_level,
@@ -1015,8 +910,6 @@ def process_document_async(file_path: Optional[str] = None, input_text: Optional
             file_path=file_path,
             input_text_to_process=input_text,
             is_synthesis_task=actual_settings.get('is_synthesis_task', False),
-            deepseek_key=actual_settings.get('deepseek_key'),
-            grok_key=actual_settings.get('grok_key'),
             chatgpt_key=actual_settings.get('chatgpt_key'),
             summary_mode=actual_settings.get('summary_mode', 'full'),
             summary_level=int(actual_settings.get('detail_level', 50)),
@@ -1031,7 +924,7 @@ def process_document_async(file_path: Optional[str] = None, input_text: Optional
         error_msg = f"Async processing wrapper for single document failed: {str(e)}"
         logger.error(error_msg, exc_info=True)
         if progress_callback: progress_callback(error_msg)
-        return {'error': error_msg, 'original_text': '', 'deepseek': None, 'grok': None, 'chatgpt': None, 'analysis': {'error': error_msg}}
+        return {'error': error_msg, 'original_text': '', 'chatgpt': None, 'analysis': {'error': error_msg}}
 
 
 def extract_text_preview(file_path: str, max_chars: int = 1000) -> str: 
