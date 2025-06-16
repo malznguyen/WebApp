@@ -446,23 +446,6 @@
                         </div>
                     </div>
 
-                    <div class="card bg-white rounded-lg shadow">
-                        <div class="p-4">
-                            <h3 class="font-medium text-gray-900 mb-3 flex items-center"><i
-                                    class="fas fa-link mr-2 text-blue-500"></i> From URL</h3>
-                            <input type="text" x-model="urlInput"
-                                class="form-input w-full text-sm mb-2 focus-ring"
-                                placeholder="https://example.com/article">
-                            <input type="text" x-model="urlInputName"
-                                class="form-input w-full text-sm mb-3 focus-ring"
-                                placeholder="Optional: Name for this URL">
-                            <button @click="addUrlToQueue()" class="btn btn-secondary w-full btn-sm"
-                                :disabled="!urlInput.trim()">
-                                <i class="fas fa-plus mr-2"></i> Add URL to Queue
-                            </button>
-                        </div>
-                    </div>
-
                     <!-- REFACTORED SUMMARY MODE SELECTION -->
                     <div class="card bg-white rounded-lg shadow">
                         <div @click="settingsPanels.summaryMode = !settingsPanels.summaryMode"

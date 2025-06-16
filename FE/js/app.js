@@ -91,8 +91,6 @@ function app() {
 
         directInputText: '',
         directInputName: '',
-        urlInput: '',
-        urlInputName: '',
         activeProcessIdToItemId: {},
 
         // ===== UI STATE =====
@@ -646,8 +644,7 @@ function app() {
                         file: file,
                         status: 'Ready',
                         type: this.getFileType(file.name),
-                        isDirectText: false,
-                        isUrl: false
+                        isDirectText: false
                     };
                     this.processingQueue.push(item);
                     validFilesAddedCount++;
@@ -685,7 +682,6 @@ function app() {
                 status: 'Ready',
                 type: 'Direct Text',
                 isDirectText: true,
-                isUrl: false,
                 file: null
             };
             this.processingQueue.push(item);
@@ -693,47 +689,6 @@ function app() {
             this.showNotification('success', 'Text Added', `'${item.name}' has been added to the queue.`);
             this.directInputText = '';
             this.directInputName = '';
-            this.canProcess = this.processingQueue.some(i => i.status === 'Ready');
-            if (!this.activePreviewFileId && this.processingQueue.length > 0) {
-                await this.setActivePreviewFile(item.id);
-            }
-        },
-
-        isValidUrl(url) {
-            try {
-                const pattern = /^https?:\/\//i;
-                const urlObj = new URL(url);
-                if (!pattern.test(url)) return false;
-                if (urlObj.hostname.includes('localhost') || /^(?:\d{1,3}\.){3}\d{1,3}$/.test(urlObj.hostname)) return false;
-                return url.length <= 2048;
-            } catch (e) {
-                return false;
-            }
-        },
-
-        async addUrlToQueue() {
-            const url = this.urlInput.trim();
-            if (!url || !this.isValidUrl(url)) {
-                this.showNotification('warning', 'Invalid URL', 'Please enter a valid URL starting with http or https.');
-                return;
-            }
-            const name = this.urlInputName.trim() || url;
-            const item = {
-                id: Common.generateId(),
-                name: name,
-                size: 0,
-                url: url,
-                status: 'Ready',
-                type: 'URL',
-                isDirectText: false,
-                isUrl: true,
-                file: null
-            };
-            this.processingQueue.push(item);
-            this.addLogEntry('info', `URL '${item.name}' added to processing queue.`);
-            this.showNotification('success', 'URL Added', `'${item.name}' has been added to the queue.`);
-            this.urlInput = '';
-            this.urlInputName = '';
             this.canProcess = this.processingQueue.some(i => i.status === 'Ready');
             if (!this.activePreviewFileId && this.processingQueue.length > 0) {
                 await this.setActivePreviewFile(item.id);
@@ -759,14 +714,6 @@ function app() {
                     this.loadingMessage = `Displaying direct text: ${fileItem.name}...`;
                     this.originalContent = fileItem.content;
                     this.addLogEntry('success', `Preview loaded for direct text: '${fileItem.name}'.`);
-                    await this.delay(50);
-                    this.isLoading = false;
-                } else if (fileItem.isUrl) {
-                    this.isLoading = true;
-                    this.loadingTitle = 'URL Preview';
-                    this.loadingMessage = 'Content will be fetched during processing.';
-                    this.originalContent = fileItem.url;
-                    this.addLogEntry('info', `URL preview set for ${fileItem.url}.`);
                     await this.delay(50);
                     this.isLoading = false;
                 } else if (fileItem.file) {
@@ -864,7 +811,7 @@ function app() {
             let currentRunIsBatch = this.processingMode === 'batch';
 
             if (currentRunIsBatch) {
-                itemsToProcess = this.processingQueue.filter(item => item.status === 'Ready' && !item.isDirectText && !item.isUrl);
+                itemsToProcess = this.processingQueue.filter(item => item.status === 'Ready' && !item.isDirectText);
                 if (itemsToProcess.length === 0) {
                     this.showNotification('info', 'No Files for Batch', 'Batch mode processes files. No ready files found.');
                     return;
@@ -921,8 +868,6 @@ function app() {
                         let inputPayload;
                         if (item.isDirectText) {
                             inputPayload = { direct_text_content: item.content, text_input_name: item.name };
-                        } else if (item.isUrl) {
-                            inputPayload = { url: item.url };
                         } else {
                             const base64Data = await this.fileToBase64(item.file);
                             inputPayload = { file_data: base64Data, filename: item.name };
@@ -977,8 +922,6 @@ function app() {
             let demoOriginalContent;
             if (item.isDirectText) {
                 demoOriginalContent = `[DEMO CONTENT from DIRECT TEXT]\n\n--- ${item.name} ---\n\n${item.content.substring(0, 500)}${item.content.length > 500 ? '...' : ''}`;
-            } else if (item.isUrl) {
-                demoOriginalContent = `[DEMO CONTENT from URL: ${item.url}]\n\nMock content.`;
             } else if (item.file) {
                 demoOriginalContent = `[DEMO CONTENT from FILE: ${item.name}]\n\nMock content.`;
             } else {
