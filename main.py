@@ -430,6 +430,23 @@ def get_document_text_on_upload(file_data_base64: str, filename: str) -> Dict[st
     finally:
         if temp_doc_path: cleanup_temp_file(temp_doc_path)
 
+def summarize_url_content(url: str) -> Dict[str, Any]:
+    """Fetches and summarizes content from a URL using the search model."""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=CHATGPT_API_KEY)
+        prompt = f"Analyze content from this URL: {url}"
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini-search-preview-2025-03-11",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=800
+        )
+        summary_text = resp.choices[0].message.content.strip() if resp and resp.choices else ""
+        return {"success": True, "summary": summary_text}
+    except Exception as e:
+        logger.error(f"URL summarization failed for {url}: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
 @eel.expose
 def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
     """Processes a single document specified by its path using given settings."""
@@ -519,41 +536,72 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     'has_errors': bool(raw_processing_result.get('overall_error')) or any(r.get('is_error') for r in ai_results_output)
                 }
 
-            else: # SINGLE ITEM PROCESSING (File or Text)
+            else: # SINGLE ITEM PROCESSING (File, Text, or URL)
                 if isinstance(file_input, dict) and 'direct_text_content' in file_input:
                     log_filename = file_input.get('text_input_name', 'Direct Text Input')
                     eel.processingProgress(process_id, 20, f"Processing direct text: {log_filename}...")()
                     raw_processing_result = process_document(input_text_to_process=file_input['direct_text_content'], **normalized_settings)
-                else: 
+                    ai_results_output = []
+                    for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
+                        content = raw_processing_result.get(model_key)
+                        if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
+                            is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
+                            ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
+                    overall_error_message = raw_processing_result.get('error')
+                    has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output)
+                    final_result_for_frontend = {
+                        'success': not bool(overall_error_message),
+                        'original_text': raw_processing_result.get('original_text', ''),
+                        'ai_results': ai_results_output,
+                        'analysis': raw_processing_result.get('analysis', {}),
+                        'error': overall_error_message,
+                        'has_errors': has_any_errors
+                    }
+                elif isinstance(file_input, dict) and 'url' in file_input:
+                    log_filename = file_input['url']
+                    eel.processingProgress(process_id, 20, f"Processing URL: {log_filename}...")()
+                    url_result = summarize_url_content(file_input['url'])
+                    ai_results_output = [
+                        {
+                            'model': 'Search Model',
+                            'content': url_result.get('summary'),
+                            'is_error': not url_result.get('success', False)
+                        }
+                    ]
+                    final_result_for_frontend = {
+                        'success': url_result.get('success', False),
+                        'original_text': '',
+                        'ai_results': ai_results_output,
+                        'analysis': {},
+                        'error': url_result.get('error'),
+                        'has_errors': not url_result.get('success', False)
+                    }
+                else:
                     file_data = file_input['file_data']
                     log_filename = file_input['filename']
                     eel.processingProgress(process_id, 15, f"Uploading {log_filename}...")()
                     upload_resp = upload_file_web(file_data, log_filename)
-                    if not upload_resp['success']: 
+                    if not upload_resp['success']:
                         raise IOError(f"Upload failed for {log_filename}: {upload_resp.get('error', 'Unknown error')}")
                     temp_file_for_this_task = upload_resp['temp_path']
                     eel.processingProgress(process_id, 30, f"Processing file: {log_filename}...")()
                     raw_processing_result = process_document(file_path=temp_file_for_this_task, **normalized_settings)
-                
-                # Format single item result for frontend
-                ai_results_output = []
-                for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
-                    content = raw_processing_result.get(model_key)
-                    if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
-                        is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
-                        ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
-                
-                overall_error_message = raw_processing_result.get('error')
-                has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output)
-                
-                final_result_for_frontend = {
-                    'success': not bool(overall_error_message),
-                    'original_text': raw_processing_result.get('original_text', ''),
-                    'ai_results': ai_results_output,
-                    'analysis': raw_processing_result.get('analysis', {}),
-                    'error': overall_error_message,
-                    'has_errors': has_any_errors
-                }
+                    ai_results_output = []
+                    for model_key, model_name in [('deepseek', 'DeepSeek'), ('grok', 'Grok'), ('chatgpt', 'ChatGPT')]:
+                        content = raw_processing_result.get(model_key)
+                        if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
+                            is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
+                            ai_results_output.append({'model': model_name, 'content': content, 'is_error': is_error_msg})
+                    overall_error_message = raw_processing_result.get('error')
+                    has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output)
+                    final_result_for_frontend = {
+                        'success': not bool(overall_error_message),
+                        'original_text': raw_processing_result.get('original_text', ''),
+                        'ai_results': ai_results_output,
+                        'analysis': raw_processing_result.get('analysis', {}),
+                        'error': overall_error_message,
+                        'has_errors': has_any_errors
+                    }
 
             eel.processingProgress(process_id, 100, f"Finalizing results for {log_filename}...")()
             eel.processingComplete(process_id, final_result_for_frontend)()
