@@ -349,6 +349,44 @@ def summarize_with_chatgpt(text: str,
         return _handle_api_error("ChatGPT", e)
 
 
+def summarize_url_with_search_model(url: str,
+                                    api_key: str,
+                                    summary_mode: str = 'full',
+                                    summary_level: int = 50,
+                                    word_count_limit: int = 500,
+                                    target_language_code: Optional[str] = None) -> str:
+    if not api_key:
+        return "ChatGPT Search Error: API Key not configured."
+    if not url or not url.strip():
+        return "ChatGPT Search Error: URL input is empty."
+    from config.constants import API_TIMEOUT_SEC
+
+    target_lang_full = _get_language_full_name(target_language_code)
+    lang_instruction = f"CRITICAL REQUIREMENT: Provide the final output ONLY in {target_lang_full}. Adherence is paramount." if target_language_code else ""
+
+    detail_instr = ""
+    if summary_mode == 'percentage':
+        detail_instr = f"The desired detail level for this summary is approximately {summary_level}%. "
+    elif summary_mode == 'word-count':
+        detail_instr = f"Please limit the output to about {word_count_limit} words. "
+
+    prompt_text = f"Analyze content from this URL: {url}. {detail_instr}{lang_instruction}"
+
+    try:
+        summary = _call_ai_model(
+            client_config={'api_key': api_key},
+            model_name="gpt-4o-mini-search-preview-2025-03-11",
+            messages=[{"role": "system", "content": "You are a helpful assistant summarizing web content."},
+                     {"role": "user", "content": prompt_text}],
+            max_tokens=4096,
+            temperature=0.6,
+            timeout=API_TIMEOUT_SEC
+        )
+        return summary
+    except Exception as e:
+        return _handle_api_error("ChatGPT Search", e)
+
+
 def _process_chunk_task(api_func,
                         chunk_text: str,
                         api_key_val: str,
@@ -704,11 +742,53 @@ def process_document(
     except Exception as e_main:
         logger.critical(f"Unexpected critical system error in process_document for '{task_name}': {e_main}", exc_info=True)
         err_msg = f"Unexpected critical system error: {e_main}"
-        return {
+        return { 
             'original_text': text_for_processing or "",
             'analysis': results.get('analysis', {'error': err_msg}),
             'chatgpt': results.get('chatgpt', f"ChatGPT Error: {err_msg}"),
             'error': err_msg
+        }
+
+def process_url_document(
+    url: str,
+    chatgpt_key: Optional[str] = None,
+    summary_mode: str = 'full',
+    summary_level: int = 50,
+    word_count_limit: int = 500,
+    target_language_code: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Processes a URL by requesting the search-enabled model to summarize it."""
+    task_name = url
+    logger.info(f"Starting URL summarization for {url}")
+
+    try:
+        summary = summarize_url_with_search_model(
+            url,
+            chatgpt_key,
+            summary_mode=summary_mode,
+            summary_level=summary_level,
+            word_count_limit=word_count_limit,
+            target_language_code=target_language_code,
+        )
+
+        is_error_msg = isinstance(summary, str) and summary.startswith("ChatGPT Search Error")
+        return {
+            'success': not is_error_msg,
+            'original_text': None,
+            'ai_result': {'model': 'ChatGPT Search', 'content': summary, 'is_error': is_error_msg},
+            'analysis': {'error': 'Analysis not available for URL input'},
+            'error': summary if is_error_msg else None,
+            'has_errors': is_error_msg,
+        }
+    except Exception as e:
+        logger.error(f"Error processing URL {url}: {e}", exc_info=True)
+        return {
+            'success': False,
+            'original_text': None,
+            'ai_result': {'model': 'ChatGPT Search', 'content': str(e), 'is_error': True},
+            'analysis': {'error': str(e)},
+            'error': str(e),
+            'has_errors': True,
         }
 
 # 🚨 CRITICAL: BATCH SYNTHESIS FUNCTION - FIXED!

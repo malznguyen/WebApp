@@ -71,6 +71,14 @@ const Common = {
         return text.replace(/[&<>"']/g, m => map[m]);
     },
 
+    // Validate URL input
+    isValidURL(url) {
+        const pattern = /^(https?:\/\/)[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&/=]*)$/;
+        if (!pattern.test(url)) return false;
+        const lower = url.toLowerCase();
+        return !(lower.includes('localhost') || lower.includes('127.0.0.1'));
+    },
+
     // Copy text to clipboard
     async copyToClipboard(text) {
         try {
