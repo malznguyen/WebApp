@@ -9,9 +9,18 @@ const ImageMetadata = {
         const basic = result.basic || {};
         const exif = result.exif || {};
         const fingerprints = result.fingerprints || {};
+
+        const gps = {};
+        Object.entries(exif).forEach(([k, v]) => {
+            if (k.toLowerCase().includes('gps')) {
+                gps[k] = v;
+            }
+        });
+
         return {
             basic,
             exif,
+            gps,
             fingerprints,
             warnings: result.warnings || []
         };
@@ -28,6 +37,7 @@ const ImageMetadata = {
             const pushRow = (k, v) => { rows.push(`"${k}","${String(v).replace(/"/g,'""')}"`); };
             Object.entries(result.basic || {}).forEach(([k,v])=>pushRow(k,v));
             Object.entries(result.exif || {}).forEach(([k,v])=>pushRow(k,v));
+            Object.entries(result.gps || {}).forEach(([k,v])=>pushRow(k,v));
             Object.entries(result.fingerprints || {}).forEach(([k,v])=>pushRow(k,v));
             const csv = rows.join('\n');
             Common.downloadAsFile(csv, `${filename}_${ts}.csv`, 'text/csv');

@@ -569,7 +569,7 @@ function app() {
             this.metadataState.result = null;
             try {
                 if (this.backendConnected) {
-                    const res = await eel.analyze_image_metadata(this.selectedImage.data, this.selectedImage.name, false)();
+                    const res = await eel.analyze_image_metadata(this.selectedImage.data, this.selectedImage.name, true)();
                     if (res && res.success) {
                         this.metadataState.result = ImageMetadata.formatForDisplay(res);
                         this.addLogEntry('info', `Metadata extracted for ${this.selectedImage.name}`);
