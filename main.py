@@ -43,7 +43,8 @@ try:
         extract_text_preview,
         extract_text,
         process_batch_synthesis,
-        process_documents_batch_web  
+        process_documents_batch_web,
+        process_url_document
     )
     from BE.core.image_processing import validate_image_upload
     from BE.core.image_metadata import ImageMetadataExtractor
@@ -523,12 +524,16 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     'has_errors': bool(raw_processing_result.get('overall_error')) or (ai_result is not None and ai_result.get('is_error'))
                 }
 
-            else: # SINGLE ITEM PROCESSING (File or Text)
+            else: # SINGLE ITEM PROCESSING (File or Text or URL)
                 if isinstance(file_input, dict) and 'direct_text_content' in file_input:
                     log_filename = file_input.get('text_input_name', 'Direct Text Input')
                     eel.processingProgress(process_id, 20, f"Processing direct text: {log_filename}...")()
                     raw_processing_result = process_document(input_text_to_process=file_input['direct_text_content'], **normalized_settings)
-                else: 
+                elif isinstance(file_input, dict) and 'url' in file_input:
+                    log_filename = file_input['url']
+                    eel.processingProgress(process_id, 20, f"Processing URL: {log_filename}...")()
+                    raw_processing_result = process_url_document(file_input['url'], **normalized_settings)
+                else:
                     file_data = file_input['file_data']
                     log_filename = file_input['filename']
                     eel.processingProgress(process_id, 15, f"Uploading {log_filename}...")()
@@ -668,6 +673,7 @@ def _verify_imports():
         ('process_document', process_document),
         ('process_batch_synthesis', process_batch_synthesis),
         ('process_documents_batch_web', process_documents_batch_web),
+        ('process_url_document', process_url_document),
         ('extract_text', extract_text),
         ('validate_image_upload', validate_image_upload),
         ('search_image_sync', search_image_sync)

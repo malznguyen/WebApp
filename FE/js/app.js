@@ -86,6 +86,7 @@ function app() {
 
         directInputText: '',
         directInputName: '',
+        urlInput: '',
         activeProcessIdToItemId: {},
 
         // ===== UI STATE =====
@@ -686,6 +687,38 @@ function app() {
             }
         },
 
+        async addUrlToQueue() {
+            const url = this.urlInput.trim();
+            if (!url) {
+                this.showNotification('warning', 'Invalid URL', 'Please enter a valid URL.');
+                return;
+            }
+            if (!Common.isValidURL(url)) {
+                this.showNotification('warning', 'Invalid URL', 'Please enter a valid URL.');
+                return;
+            }
+
+            const item = {
+                id: Common.generateId(),
+                name: url,
+                size: url.length,
+                url: url,
+                status: 'Ready',
+                type: 'URL',
+                isUrl: true,
+                isDirectText: false,
+                file: null
+            };
+            this.processingQueue.push(item);
+            this.addLogEntry('info', `URL '${url}' added to processing queue.`);
+            this.showNotification('success', 'URL Added', 'URL has been added to the queue.');
+            this.urlInput = '';
+            this.canProcess = this.processingQueue.some(i => i.status === 'Ready');
+            if (!this.activePreviewFileId && this.processingQueue.length > 0) {
+                await this.setActivePreviewFile(item.id);
+            }
+        },
+
         async setActivePreviewFile(itemId) {
             const fileItem = this.processingQueue.find(item => item.id === itemId);
             if (this.activePreviewFileId === itemId && this.originalContent !== '' && !this.isLoading) {
@@ -709,6 +742,9 @@ function app() {
                     this.isLoading = false;
                 } else if (fileItem.file) {
                     await this.displayDocumentContentOnUpload(fileItem.file);
+                } else if (fileItem.isUrl) {
+                    this.originalContent = `URL: ${fileItem.url}\nNo preview available. Start processing to fetch content.`;
+                    this.addLogEntry('info', `Preview for URL '${fileItem.url}' is not available.`);
                 } else {
                     this.originalContent = `Preview is not available for '${fileItem.name}'.`;
                     this.addLogEntry('warning', `Cannot display preview for '${fileItem.name}': No file or direct content.`);
@@ -802,7 +838,7 @@ function app() {
             let currentRunIsBatch = this.processingMode === 'batch';
 
             if (currentRunIsBatch) {
-                itemsToProcess = this.processingQueue.filter(item => item.status === 'Ready' && !item.isDirectText);
+                itemsToProcess = this.processingQueue.filter(item => item.status === 'Ready' && !item.isDirectText && !item.isUrl);
                 if (itemsToProcess.length === 0) {
                     this.showNotification('info', 'No Files for Batch', 'Batch mode processes files. No ready files found.');
                     return;
@@ -859,6 +895,8 @@ function app() {
                         let inputPayload;
                         if (item.isDirectText) {
                             inputPayload = { direct_text_content: item.content, text_input_name: item.name };
+                        } else if (item.isUrl) {
+                            inputPayload = { url: item.url };
                         } else {
                             const base64Data = await this.fileToBase64(item.file);
                             inputPayload = { file_data: base64Data, filename: item.name };
@@ -915,6 +953,8 @@ function app() {
                 demoOriginalContent = `[DEMO CONTENT from DIRECT TEXT]\n\n--- ${item.name} ---\n\n${item.content.substring(0, 500)}${item.content.length > 500 ? '...' : ''}`;
             } else if (item.file) {
                 demoOriginalContent = `[DEMO CONTENT from FILE: ${item.name}]\n\nMock content.`;
+            } else if (item.isUrl) {
+                demoOriginalContent = `[DEMO] URL input: ${item.url}`;
             } else {
                 demoOriginalContent = `[DEMO] No source for ${item.name}.`;
             }
