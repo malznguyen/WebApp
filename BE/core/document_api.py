@@ -19,6 +19,33 @@ MAX_CHUNK_WORKERS = 3
 MAX_PROMPT_TEXT_LENGTH = 110000
 DOCUMENT_SEPARATOR = "\n\n--- DOCUMENT BREAK ---\n\n"
 
+# Prompt template for ChatGPT named entity recognition
+ENTITY_EXTRACTION_PROMPT = '''
+Extract ALL named entities from this text and return ONLY valid JSON.
+DO NOT include markdown formatting or explanations.
+
+{
+  "entities": {
+    "persons": [{"name": "exact name", "count": occurrences, "positions": [char_positions]}],
+    "locations": [{"name": "exact name", "count": occurrences, "positions": [char_positions]}],
+    "organizations": [{"name": "exact name", "count": occurrences, "positions": [char_positions]}],
+    "dates": [{"value": "date/time", "count": occurrences, "positions": [char_positions]}],
+    "misc": [{"name": "other entities", "count": occurrences, "positions": [char_positions]}]
+  },
+  "language_detected": "vi|en|other",
+  "extraction_confidence": 0.0-1.0
+}
+
+IMPORTANT RULES:
+- Merge similar entities (Sài Gòn = TP.HCM = TPHCM)
+- Keep original text casing
+- For Vietnamese: handle names like "Nguyễn Văn A" correctly
+- Count EVERY occurrence, not just unique
+- Positions are character offsets from start
+
+Text to analyze:
+'''
+
 class TextAnalysis: 
     @staticmethod
     def count_words(text: str) -> Union[int, str]:
@@ -438,6 +465,32 @@ def summarize_with_chatgpt(text: str,
         return _handle_api_error("ChatGPT", e)
 
 
+def extract_entities_with_chatgpt(text: str, api_key: str) -> str:
+    """Extract named entities from text using ChatGPT and return raw JSON string."""
+    if not api_key:
+        return json.dumps({"error": "ChatGPT API key not configured."})
+    if not text or not text.strip():
+        return json.dumps({"error": "Input text for entity extraction is empty."})
+
+    from config.constants import API_TIMEOUT_SEC
+
+    user_prompt = ENTITY_EXTRACTION_PROMPT + text[:MAX_PROMPT_TEXT_LENGTH]
+    try:
+        return _call_ai_model(
+            client_config={'api_key': api_key},
+            model_name="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an advanced NER extraction AI."},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=4096,
+            temperature=0.0,
+            timeout=API_TIMEOUT_SEC
+        )
+    except Exception as e:
+        return json.dumps({"error": _handle_api_error("ChatGPT", e)})
+
+
 def _process_chunk_task(api_func,
                         chunk_text: str,
                         api_key_val: str,
@@ -666,6 +719,7 @@ def process_document(
     summary_level: int = 50,
     word_count_limit: int = 500,
     target_language_code: Optional[str] = None,
+    extract_entities: bool = False,
 ) -> Dict[str, Any]:
     """Processes a single document for text extraction, analysis, and AI summarization."""
     
@@ -680,7 +734,15 @@ def process_document(
         detail_str = "Full summary"
     logger.info(f"Starting [{processing_type}]: '{task_name}' ({detail_str}, {lang_str})")
 
-    results: Dict[str, Any] = {'original_text': None, 'deepseek': None, 'grok': None, 'chatgpt': None, 'analysis': None, 'error': None}
+    results: Dict[str, Any] = {
+        'original_text': None,
+        'deepseek': None,
+        'grok': None,
+        'chatgpt': None,
+        'analysis': None,
+        'entities': None,
+        'error': None
+    }
     text_for_processing: Optional[str] = None
     analysis_error_msg: Optional[str] = None
 
@@ -729,6 +791,25 @@ def process_document(
             logger.error(f"Critical error during text analysis for '{task_name}': {analysis_exception}", exc_info=True)
             analysis_error_msg = f"System error during text analysis: {analysis_exception}"
             results['analysis'] = {'error': analysis_error_msg}
+
+        # 2b. Optional Named Entity Recognition using ChatGPT
+        if extract_entities:
+            logger.info(f"Starting entity extraction for '{task_name}'...")
+            try:
+                raw_entities = extract_entities_with_chatgpt(text_for_processing, chatgpt_key or "")
+                try:
+                    entities_json = json.loads(raw_entities)
+                except json.JSONDecodeError:
+                    import re
+                    json_match = re.search(r'\{.*\}', raw_entities, re.DOTALL)
+                    if json_match:
+                        entities_json = json.loads(json_match.group())
+                    else:
+                        entities_json = {"error": "Failed to parse entities", "raw": raw_entities}
+                results['entities'] = entities_json
+            except Exception as ent_err:
+                logger.error(f"Entity extraction failed for '{task_name}': {ent_err}", exc_info=True)
+                results['entities'] = {"error": str(ent_err)}
 
         # 3. Call AI Models
         active_api_configs = []
@@ -798,9 +879,10 @@ def process_document(
         err_msg = f"Unexpected critical system error: {e_main}"
         return {
             'original_text': text_for_processing or "", 'analysis': results.get('analysis', {'error': err_msg}),
-            'deepseek': results.get('deepseek', f"DeepSeek Error: {err_msg}"), 
-            'grok': results.get('grok', f"Grok Error: {err_msg}"), 
+            'deepseek': results.get('deepseek', f"DeepSeek Error: {err_msg}"),
+            'grok': results.get('grok', f"Grok Error: {err_msg}"),
             'chatgpt': results.get('chatgpt', f"ChatGPT Error: {err_msg}"),
+            'entities': results.get('entities'),
             'error': err_msg
         }
 
@@ -1022,6 +1104,7 @@ def process_document_async(file_path: Optional[str] = None, input_text: Optional
             summary_level=int(actual_settings.get('detail_level', 50)),
             word_count_limit=int(actual_settings.get('word_count_limit', 500)),
             target_language_code=actual_settings.get('target_language_code'),
+            extract_entities=actual_settings.get('extract_entities', False),
         )
         if progress_callback:
             msg = f"Processing completed with issues: {result.get('error')}" if result.get('error') else "Processing completed successfully."
@@ -1031,7 +1114,15 @@ def process_document_async(file_path: Optional[str] = None, input_text: Optional
         error_msg = f"Async processing wrapper for single document failed: {str(e)}"
         logger.error(error_msg, exc_info=True)
         if progress_callback: progress_callback(error_msg)
-        return {'error': error_msg, 'original_text': '', 'deepseek': None, 'grok': None, 'chatgpt': None, 'analysis': {'error': error_msg}}
+        return {
+            'error': error_msg,
+            'original_text': '',
+            'deepseek': None,
+            'grok': None,
+            'chatgpt': None,
+            'analysis': {'error': error_msg},
+            'entities': None
+        }
 
 
 def extract_text_preview(file_path: str, max_chars: int = 1000) -> str: 

@@ -392,6 +392,8 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
         processing_mode = settings_from_frontend.get('processing_mode', 'individual')
         normalized_settings['is_synthesis_task'] = (processing_mode == 'batch')
 
+        normalized_settings['extract_entities'] = bool(settings_from_frontend.get('extract_entities', False))
+
         logger.debug(f"Normalized processing settings: {normalized_settings}")
         return normalized_settings
     except Exception as e:
@@ -405,6 +407,7 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
             'word_count_limit': 500,
             'target_language_code': None,
             'is_synthesis_task': False,
+            'extract_entities': False,
         }
 
 @eel.expose
@@ -453,12 +456,13 @@ def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, A
         
         overall_error_message = processing_result.get('error')
         has_any_errors = bool(overall_error_message) or any(res.get('is_error') for res in ai_results_output if isinstance(res, dict))
-        
+
         return {
             'success': not bool(overall_error_message),
             'original_text': processing_result.get('original_text', ''),
             'ai_results': ai_results_output,
             'analysis': processing_result.get('analysis', {}),
+            'entities': processing_result.get('entities'),
             'error': overall_error_message,
             'has_errors': has_any_errors
         }
@@ -516,7 +520,8 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     'failed_files': raw_processing_result.get('failed_files', []),
                     'concatenated_text_char_count': raw_processing_result.get('concatenated_text_char_count', 0),
                     'overall_error': raw_processing_result.get('overall_error'),
-                    'has_errors': bool(raw_processing_result.get('overall_error')) or any(r.get('is_error') for r in ai_results_output)
+                    'has_errors': bool(raw_processing_result.get('overall_error')) or any(r.get('is_error') for r in ai_results_output),
+                    'entities': raw_processing_result.get('entities')
                 }
 
             else: # SINGLE ITEM PROCESSING (File or Text)
@@ -551,6 +556,7 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     'original_text': raw_processing_result.get('original_text', ''),
                     'ai_results': ai_results_output,
                     'analysis': raw_processing_result.get('analysis', {}),
+                    'entities': raw_processing_result.get('entities'),
                     'error': overall_error_message,
                     'has_errors': has_any_errors
                 }
