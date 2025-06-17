@@ -1131,7 +1131,12 @@ function app() {
                     completionMessage + (result.error ? ` Issues: ${result.error}` : ''));
 
                 if (this.activePreviewFileId === item.id) {
-                    this.originalContent = result.original_text || `Content for ${item.name} unavailable.`;
+                    if (item.isUrl) {
+                        const urlLink = `<a href="${item.url}" target="_blank" class="text-blue-600 underline">${item.url}</a>`;
+                        this.originalContent = result.original_text ? `${urlLink}<br>${result.original_text}` : urlLink;
+                    } else {
+                        this.originalContent = result.original_text || `Content for ${item.name} unavailable.`;
+                    }
                     this.aiResult = result.ai_result || null;
                     this.analysisData = result.analysis || null;
                     if (this.analysisData && this.analysisData.common_words && this.contentTab === 'analysis' && !this.analysisData.error) {
