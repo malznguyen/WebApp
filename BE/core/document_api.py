@@ -286,15 +286,32 @@ def _handle_api_error(api_name: str, exception: Exception) -> str:
     return f"{api_name} API Error: An unexpected issue occurred ({type(exception).__name__}). Details: {str(exception)}"
 
 
-def _call_ai_model(client_config: Dict[str, Any], model_name: str, messages: List[Dict[str, str]], 
-                   max_tokens: int, temperature: float, timeout: int) -> str:
+def _call_ai_model(
+    client_config: Dict[str, Any],
+    model_name: str,
+    messages: List[Dict[str, str]],
+    max_tokens: int,
+    temperature: float,
+    timeout: int,
+) -> str:
     """Helper to make the actual API call, abstracting client creation."""
-    client = OpenAI(api_key=client_config['api_key'], base_url=client_config.get('base_url'))
-    response = client.with_options(timeout=timeout).chat.completions.create(
-        model=model_name,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=temperature
+    client = OpenAI(
+        api_key=client_config["api_key"],
+        base_url=client_config.get("base_url"),
+    )
+
+    request_params = {
+        "model": model_name,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+
+    # Search-optimized models reject the temperature parameter
+    if temperature is not None and "search-preview" not in model_name:
+        request_params["temperature"] = temperature
+
+    response = (
+        client.with_options(timeout=timeout).chat.completions.create(**request_params)
     )
     if response and response.choices and response.choices[0].message and response.choices[0].message.content:
         return response.choices[0].message.content.strip()
