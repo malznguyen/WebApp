@@ -11,6 +11,79 @@ import json
 
 logger = logging.getLogger('ImageSearchApp')
 
+# === AI Image Detection Prompts ===
+AI_DETECTION_SYSTEM_PROMPT = (
+    "You are an expert digital forensics analyst specializing in AI-generated "
+    "image detection. Your task is to analyze images for signs of artificial "
+    "generation using current AI models (DALL-E, Midjourney, Stable Diffusion, etc.)."
+)
+
+AI_DETECTION_USER_PROMPT = """
+ANALYSIS FRAMEWORK:
+1. TECHNICAL ARTIFACTS
+- Pixel-level inconsistencies
+- Compression artifacts unusual for camera photos
+- Lighting inconsistencies across objects
+- Shadow direction conflicts
+- Texture anomalies
+
+2. ANATOMICAL INDICATORS (for human subjects)
+- Facial feature asymmetries
+- Hand/finger anatomy errors
+- Eye reflection inconsistencies
+- Skin texture unnaturalness
+- Hair strand impossibilities
+
+3. CONTEXTUAL CLUES
+- Background-foreground integration issues
+- Impossible physics or perspectives
+- Text rendering errors or nonsensical text
+- Brand logo distortions
+- Architectural impossibilities
+
+4. STYLE MARKERS
+- Overly perfect or "glossy" appearance
+- Telltale AI art style characteristics
+- Color grading typical of AI models
+- Composition patterns common in generated images
+
+OUTPUT FORMAT (JSON):
+{
+  "ai_generated_probability": "percentage (0-100)",
+  "confidence_level": "low/medium/high",
+  "analysis_summary": "concise explanation in Vietnamese",
+  "detected_indicators": [
+    {
+      "category": "technical/anatomical/contextual/style",
+      "indicator": "specific finding",
+      "severity": "minor/moderate/major",
+      "explanation": "why this suggests AI generation"
+    }
+  ],
+  "likely_generation_method": "DALL-E/Midjourney/Stable Diffusion/Real Photo/Unknown",
+  "recommendations": "advice for user",
+  "limitations": "analysis limitations and caveats"
+}
+
+IMPORTANT CONSIDERATIONS:
+- Modern AI can be extremely sophisticated - express uncertainty when appropriate
+- Real photos can have unusual characteristics too
+- Heavy photo editing can mimic AI artifacts
+- Provide educational value, not definitive judgments
+- Be especially careful with photos of people (privacy/reputation concerns)
+
+Nếu ảnh chứa text tiếng Việt:
+- Kiểm tra dấu thanh chính xác
+- Font rendering consistency
+- Spelling và grammar trong signs/text
+- Cultural context appropriateness
+
+Nếu ảnh chứa Vietnamese subjects:
+- Facial feature authenticity
+- Cultural dress/setting accuracy
+- Background context matching Vietnamese locations
+"""
+
 class OpenAIVisionClient:
     
     def __init__(self, api_key: str):
@@ -120,8 +193,57 @@ class OpenAIVisionClient:
             processing_time = time.time() - start_time
             error_msg = f"Unexpected error in vision analysis for '{filename}': {str(e)}"
             logger.error(error_msg, exc_info=True)
-            
+
             return self._create_error_response(error_msg, filename, processing_time)
+
+    def detect_ai_generated_image(self, image_data: bytes, filename: str = "image") -> Dict[str, Any]:
+        """Analyze an image for signs of AI generation."""
+        start_time = time.time()
+        try:
+            validation_result = self._validate_image(image_data, filename)
+            if not validation_result['valid']:
+                return self._create_error_response(validation_result['error'], filename)
+
+            optimized_data, optimization_info = self._optimize_image_for_api(image_data)
+            base64_image = base64.b64encode(optimized_data).decode('utf-8')
+
+            api_response = self._call_vision_api_with_retry(
+                base64_image=base64_image,
+                prompt=AI_DETECTION_USER_PROMPT,
+                detail_level="detailed",
+                filename=filename,
+                system_prompt=AI_DETECTION_SYSTEM_PROMPT
+            )
+
+            if not api_response['success']:
+                return self._create_error_response(api_response['error'], filename)
+
+            raw_text = api_response['description']
+            detection_data = self._extract_json_from_text(raw_text)
+
+            image_metadata = self._extract_comprehensive_metadata(image_data)
+            processing_time = time.time() - start_time
+
+            result = {
+                'success': True,
+                'detection': detection_data,
+                'raw_response': raw_text,
+                'processing_time_seconds': round(processing_time, 2),
+                'optimization_info': optimization_info,
+                'image_metadata': image_metadata,
+                'api_usage': api_response['usage'],
+                'timestamp': datetime.now().isoformat(),
+                'filename': filename
+            }
+
+            self.total_requests += 1
+            self.total_tokens_used += api_response['usage'].get('total_tokens', 0)
+
+            return result
+        except Exception as e:
+            processing_time = time.time() - start_time
+            logger.error(f"Unexpected error in AI detection for '{filename}': {e}", exc_info=True)
+            return self._create_error_response(str(e), filename, processing_time)
     
     def _validate_image(self, image_data: bytes, filename: str) -> Dict[str, Any]:
         """Comprehensive image validation với detailed error messages"""
@@ -328,11 +450,12 @@ class OpenAIVisionClient:
         
         return prompts[lang][detail_level]
     
-    def _call_vision_api_with_retry(self, 
-                                   base64_image: str, 
-                                   prompt: str, 
+    def _call_vision_api_with_retry(self,
+                                   base64_image: str,
+                                   prompt: str,
                                    detail_level: str,
-                                   filename: str) -> Dict[str, Any]:
+                                   filename: str,
+                                   system_prompt: Optional[str] = None) -> Dict[str, Any]:
         """
         Call OpenAI Vision API với robust retry logic
         """
@@ -349,26 +472,26 @@ class OpenAIVisionClient:
                 
                 image_detail = "high" if detail_level == "extensive" else "auto"
                 
+                messages = []
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                                "detail": image_detail
+                            }
+                        }
+                    ]
+                })
+
                 response = self.client.chat.completions.create(
                     model="gpt-4o",  # Best vision model as of 2025
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": prompt
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{base64_image}",
-                                        "detail": image_detail
-                                    }
-                                }
-                            ]
-                        }
-                    ],
+                    messages=messages,
                     max_tokens=max_tokens,
                     temperature=0.3,  # Lower temperature for more consistent descriptions
                     timeout=self.timeout
@@ -430,8 +553,24 @@ class OpenAIVisionClient:
         
         input_cost = usage.prompt_tokens * input_cost_per_token
         output_cost = usage.completion_tokens * output_cost_per_token
-        
+
         return round(input_cost + output_cost, 6)
+
+    def _extract_json_from_text(self, text: str) -> Optional[Dict[str, Any]]:
+        """Attempt to extract a JSON object from text."""
+        try:
+            if '```' in text:
+                for part in text.split('```'):
+                    part = part.strip()
+                    if part.startswith('{') and part.endswith('}'):
+                        return json.loads(part)
+            start = text.find('{')
+            end = text.rfind('}')
+            if start != -1 and end != -1 and end > start:
+                return json.loads(text[start:end + 1])
+        except Exception as e:
+            logger.debug(f"JSON parse failed: {e}")
+        return None
     
     def _extract_comprehensive_metadata(self, image_data: bytes) -> Dict[str, Any]:
         """Extract comprehensive image metadata"""
@@ -495,7 +634,7 @@ class OpenAIVisionClient:
 # ===== STEP 2: Integration Functions =====
 # Add to existing BE/core/document_api.py or create new file
 
-def describe_image_with_openai_vision(image_data: bytes, 
+def describe_image_with_openai_vision(image_data: bytes,
                                      filename: str,
                                      language: str = "vietnamese",
                                      detail_level: str = "detailed",
@@ -539,6 +678,32 @@ def describe_image_with_openai_vision(image_data: bytes,
             'success': False,
             'error': f'System error in vision wrapper: {str(e)}',
             'description': None,
+            'filename': filename,
+            'timestamp': datetime.now().isoformat()
+        }
+
+
+def detect_ai_image_with_openai_vision(image_data: bytes, filename: str) -> Dict[str, Any]:
+    """Wrapper for AI-generated image detection."""
+    try:
+        from config.settings import CHATGPT_API_KEY
+
+        if not CHATGPT_API_KEY or not CHATGPT_API_KEY.strip():
+            return {
+                'success': False,
+                'error': 'OpenAI API key not configured in settings',
+                'detection': None
+            }
+
+        vision_client = OpenAIVisionClient(CHATGPT_API_KEY)
+        result = vision_client.detect_ai_generated_image(image_data=image_data, filename=filename)
+        return result
+    except Exception as e:
+        logger.error(f"AI detection wrapper error for '{filename}': {e}", exc_info=True)
+        return {
+            'success': False,
+            'error': f'System error in AI detection wrapper: {str(e)}',
+            'detection': None,
             'filename': filename,
             'timestamp': datetime.now().isoformat()
         }

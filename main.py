@@ -57,13 +57,20 @@ except ImportError as e:
 # --- Vision Module Import (Optional) ---
 # This is kept separate because it's a new, non-essential feature.
 try:
-    from BE.core.vision_api import OpenAIVisionClient, describe_image_with_openai_vision
+    from BE.core.vision_api import (
+        OpenAIVisionClient,
+        describe_image_with_openai_vision,
+        detect_ai_image_with_openai_vision,
+    )
     VISION_MODULE_AVAILABLE = True
     logger.info("✅ Vision module imported successfully.")
 except ImportError as e:
     logger.warning(f"⚠️ Vision module not available. Image description will be disabled. Error: {e}")
     # Define placeholder functions if the module is missing
     def describe_image_with_openai_vision(*args, **kwargs):
+        return {'success': False, 'error': 'Vision module not installed on the server.'}
+
+    def detect_ai_image_with_openai_vision(*args, **kwargs):
         return {'success': False, 'error': 'Vision module not installed on the server.'}
     VISION_MODULE_AVAILABLE = False
 
@@ -341,6 +348,23 @@ def _run_async_vision_task(task_id: str, *args, **kwargs):
     finally:
         active_processing_tasks.pop(task_id, None)
 
+def _run_async_detection_task(task_id: str, *args, **kwargs):
+    """Wrapper for AI detection tasks."""
+    try:
+        eel.detectionProgress(task_id, 15, "Validating and preparing image...")()
+        eel.detectionProgress(task_id, 40, "Sending image to AI for analysis...")()
+        result_dict = detect_ai_image_web(*args, **kwargs)
+        eel.detectionProgress(task_id, 90, "Processing AI response...")()
+        if result_dict.get('success'):
+            eel.detectionComplete(task_id, result_dict)()
+        else:
+            eel.detectionError(task_id, "AI Detection Failed", result_dict.get('error', 'Unknown Error'))()
+    except Exception as e:
+        logger.error(f"Async detection task thread for ID {task_id} failed: {e}", exc_info=True)
+        eel.detectionError(task_id, "System Error in Detection Thread", str(e))()
+    finally:
+        active_processing_tasks.pop(task_id, None)
+
 @eel.expose
 def search_image_async_web(image_data_base64: str, filename: str, social_media_only: bool = False) -> str:
     search_id = f"search_{int(time.time())}"
@@ -372,6 +396,30 @@ def describe_image_async_web(image_data_base64: str, filename: str, language: st
     active_processing_tasks[task_id] = thread
     thread.start()
     logger.debug(f"Started async vision thread with ID: {task_id}")
+    return task_id
+
+@eel.expose
+def detect_ai_image_web(image_data_base64: str, filename: str) -> Dict[str, Any]:
+    """Web API endpoint for AI-generated image detection."""
+    if not VISION_MODULE_AVAILABLE:
+        return {'success': False, 'error': 'Vision module not available on the server.', 'detection': None}
+
+    try:
+        image_bytes = validate_base64_data(image_data_base64, "data:image")
+        result = detect_ai_image_with_openai_vision(image_bytes, filename)
+        return result
+    except Exception as e:
+        logger.error(f"Error in detect_ai_image_web for '{filename}': {e}", exc_info=True)
+        return {'success': False, 'error': f"System error: {e}", 'detection': None}
+
+@eel.expose
+def detect_ai_image_async_web(image_data_base64: str, filename: str) -> str:
+    """Asynchronous version of AI detection."""
+    task_id = f"aidetect_{int(time.time())}"
+    thread = threading.Thread(target=_run_async_detection_task, args=(task_id, image_data_base64, filename))
+    active_processing_tasks[task_id] = thread
+    thread.start()
+    logger.debug(f"Started async detection thread with ID: {task_id}")
     return task_id
 
 @eel.expose
