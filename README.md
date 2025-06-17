@@ -96,3 +96,5 @@ This project is provided under the MIT License. See `LICENSE` if included in the
 ## Known Limitations
 - OpenAI Vision requires valid credentials and may incur usage costs.
 - Extremely large documents may be truncated to stay within API limits.
+- Search preview models from OpenAI ignore the `temperature` parameter. The
+  application automatically omits this setting for those models.
