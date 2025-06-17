@@ -616,6 +616,21 @@ button.btn {
     border-top-color: var(--gray-900);
 }
 
+/* ===== AI DETECTION METER ===== */
+.ai-prob-meter {
+    width: 100%;
+    height: 16px;
+    background: var(--gray-200);
+    border-radius: 9999px;
+    overflow: hidden;
+}
+
+.ai-prob-meter-fill {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 0.5s ease;
+}
+
 /* ===== RESPONSIVE ADJUSTMENTS ===== */
 @media (max-width: 768px) {
     .result-card {

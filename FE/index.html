@@ -206,6 +206,31 @@
                         </div>
                     </div>
 
+                    <div x-show="selectedImage && visionCapabilities.available" class="card p-4">
+                        <h4 class="font-medium text-gray-900 mb-3 flex items-center">
+                            <i class="fas fa-robot mr-2 text-red-600"></i> AI Detection
+                        </h4>
+                        <div class="space-y-3">
+                            <label class="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-50 rounded-md">
+                                <input type="checkbox" x-model="detectionSettings.autoAnalyze" class="form-checkbox text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm text-gray-700">Auto-detect on upload</span>
+                            </label>
+                            <button class="btn btn-secondary w-full" @click="analyzeImageForAI()" :disabled="detectionState.isAnalyzing || !visionCapabilities.apiConfigured">
+                                <span x-show="!detectionState.isAnalyzing"><i class="fas fa-search mr-2"></i>Detect AI Image</span>
+                                <span x-show="detectionState.isAnalyzing" class="flex items-center justify-center">
+                                    <div class="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
+                                    Detecting...
+                                </span>
+                            </button>
+                        </div>
+                        <div x-show="detectionState.isAnalyzing" class="space-y-2 pt-3">
+                            <div class="progress-container">
+                                <div class="progress-bar" :style="'width: ' + detectionState.progress + '%'"></div>
+                            </div>
+                            <p class="text-xs text-gray-600 text-center" x-text="detectionState.status"></p>
+                        </div>
+                    </div>
+
                     <div x-show="selectedImage" class="card p-4">
                         <h4 class="font-medium text-gray-900 mb-3 flex items-center">
                             <i class="fas fa-info-circle mr-2 text-indigo-600"></i> Image Metadata
@@ -295,6 +320,35 @@
                                         class="fas fa-download mr-1.5"></i>Export</button>
                             </div>
                         </div>
+                    </div>
+                </div>
+                <div x-show="detectionState.result" class="card p-4 sm:p-5 mb-6" x-transition>
+                    <div class="flex items-start justify-between mb-3">
+                        <h3 class="font-semibold text-gray-800 text-lg flex items-center">
+                            <i class="fas fa-robot mr-2 text-red-600"></i> AI Detection Result
+                        </h3>
+                        <button @click="clearDetectionResult()" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div x-show="detectionState.result.error" class="text-sm text-red-700 bg-red-100 p-3 rounded-md border border-red-200" x-text="detectionState.result.error"></div>
+                    <div x-show="!detectionState.result.error" class="space-y-4">
+                        <div class="text-center">
+                            <div class="ai-prob-meter mb-1">
+                                <div class="ai-prob-meter-fill" :style="ImageDetection.probabilityStyle(detectionState.result.probability)"></div>
+                            </div>
+                            <p class="text-sm font-medium"><span x-text="detectionState.result.probability.toFixed(1)"></span>% - <span x-text="detectionState.result.confidence"></span></p>
+                        </div>
+                        <div class="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 p-3 rounded-lg border" x-text="detectionState.result.summary"></div>
+                        <div x-show="detectionState.result.indicators && detectionState.result.indicators.length" class="text-sm">
+                            <h5 class="font-semibold mb-1">Indicators</h5>
+                            <ul class="list-disc pl-5 space-y-0.5">
+                                <template x-for="(ind, idx) in detectionState.result.indicators" :key="idx">
+                                    <li><span class="font-medium" x-text="ind.category"></span>: <span x-text="ind.indicator"></span> (<span x-text="ind.severity"></span>)</li>
+                                </template>
+                            </ul>
+                        </div>
+                        <p class="text-xs text-gray-500" x-text="'Likely: ' + detectionState.result.method"></p>
                     </div>
                 </div>
                 <div x-show="metadataState.result" class="card p-4 sm:p-5 mb-6" x-transition>
@@ -1049,6 +1103,7 @@
     <script type="text/javascript" src="/eel.js"></script>
     <script src="js/components/common.js"></script>
     <script src="js/components/image-vision.js"></script>
+    <script src="js/components/image-detection.js"></script>
     <script src="js/components/image-metadata.js"></script>
     <script src="js/utils/notifications.js"></script>
     <script src="js/utils/chart-renderer.js"></script>

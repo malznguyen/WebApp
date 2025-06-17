@@ -32,6 +32,18 @@ function app() {
             taskId: null
         },
 
+        detectionSettings: {
+            autoAnalyze: false
+        },
+
+        detectionState: {
+            isAnalyzing: false,
+            progress: 0,
+            status: '',
+            result: null,
+            taskId: null
+        },
+
         metadataSettings: {
             autoAnalyze: false
         },
@@ -124,6 +136,10 @@ function app() {
                 eel.expose(this.handleVisionProgress.bind(this), 'visionProgress');
                 eel.expose(this.handleVisionComplete.bind(this), 'visionComplete');
                 eel.expose(this.handleVisionError.bind(this), 'visionError');
+
+                eel.expose(this.handleDetectionProgress.bind(this), 'detectionProgress');
+                eel.expose(this.handleDetectionComplete.bind(this), 'detectionComplete');
+                eel.expose(this.handleDetectionError.bind(this), 'detectionError');
 
                 this.addLogEntry('info', 'Eel callbacks exposed to Python.');
             } else {
@@ -290,6 +306,10 @@ function app() {
                 if (this.visionSettings.autoAnalyze && this.visionCapabilities.available) {
                     await this.delay(500);
                     this.analyzeImageWithVision();
+                }
+                if (this.detectionSettings.autoAnalyze && this.visionCapabilities.available) {
+                    await this.delay(500);
+                    this.analyzeImageForAI();
                 }
                 if (this.metadataSettings.autoAnalyze) {
                     await this.delay(300);
@@ -593,6 +613,90 @@ function app() {
                 const base = this.selectedImage?.name?.replace(/\.[^/.]+$/, '') || 'image_metadata';
                 ImageMetadata.exportMetadata(this.metadataState.result, base, format);
             }
+        },
+
+        async analyzeImageForAI() {
+            if (!this.selectedImage || this.detectionState.isAnalyzing || !this.visionCapabilities.available) return;
+            this.detectionState.isAnalyzing = true;
+            this.detectionState.progress = 0;
+            this.detectionState.result = null;
+            this.detectionState.status = 'Preparing image for detection...';
+
+            this.addLogEntry('info', `Starting AI detection for '${this.selectedImage.name}'`);
+            try {
+                if (this.backendConnected) {
+                    const taskId = await eel.detect_ai_image_async_web(this.selectedImage.data, this.selectedImage.name)();
+                    this.detectionState.taskId = taskId;
+                    this.addLogEntry('info', `AI detection started with task ID: ${taskId}`);
+                } else {
+                    await this.runDemoAIDetection();
+                }
+            } catch (error) {
+                this.handleDetectionError('demo_task_id', 'AI Detection Failed', error.message || 'Unknown error');
+            }
+        },
+
+        async runDemoAIDetection() {
+            const steps = [
+                { progress: 15, message: 'Demo: Validating...' },
+                { progress: 40, message: 'Demo: Sending to AI...' },
+                { progress: 80, message: 'Demo: Evaluating...' },
+                { progress: 100, message: 'Demo: Done!' }
+            ];
+            for (const step of steps) {
+                await this.delay(700 + Math.random() * 300);
+                this.handleDetectionProgress('demo_det', step.progress, step.message);
+            }
+            const mock = {
+                success: true,
+                detection: {
+                    ai_generated_probability: 65,
+                    confidence_level: 'medium',
+                    analysis_summary: '[DEMO] Có một số dấu hiệu có thể ảnh do AI tạo ra.',
+                    detected_indicators: [
+                        { category: 'technical', indicator: 'pixel anomaly', severity: 'moderate', explanation: 'Độ chi tiết không đồng đều' }
+                    ],
+                    likely_generation_method: 'Unknown'
+                },
+                filename: this.selectedImage.name,
+                processing_time_seconds: 1.2,
+                api_usage: { cost_estimate: 0, total_tokens: 0 }
+            };
+            this.handleDetectionComplete('demo_det', mock);
+        },
+
+        handleDetectionProgress(taskId, percent, message) {
+            if (this.detectionState.taskId === taskId || taskId.startsWith('demo')) {
+                this.detectionState.progress = Math.max(0, Math.min(100, percent));
+                this.detectionState.status = message;
+                this.addLogEntry('info', `[Detect ${taskId}] ${percent}% - ${message}`);
+            }
+        },
+
+        handleDetectionComplete(taskId, result) {
+            if (this.detectionState.taskId === taskId || taskId.startsWith('demo')) {
+                this.detectionState.isAnalyzing = false;
+                this.detectionState.progress = 100;
+                this.detectionState.status = 'Detection complete';
+                this.detectionState.result = ImageDetection.formatDetectionResult(result);
+                this.addLogEntry('success', `AI detection completed for '${result.filename}'`);
+            }
+        },
+
+        handleDetectionError(taskId, title, message) {
+            this.detectionState.isAnalyzing = false;
+            this.detectionState.progress = 0;
+            this.detectionState.status = `Error: ${message}`;
+            this.detectionState.result = { error: message };
+            this.addLogEntry('error', `AI detection failed: ${title} - ${message}`);
+            this.showNotification('error', title, message);
+        },
+
+        clearDetectionResult() {
+            this.detectionState.result = null;
+            this.detectionState.progress = 0;
+            this.detectionState.status = '';
+            this.addLogEntry('info', 'AI detection result cleared');
         },
 
         // ===== DOCUMENT PROCESSING METHODS (UPDATED FOR SUMMARY MODE) =====
