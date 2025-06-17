@@ -601,10 +601,14 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                 
                 # Format single item result for frontend
                 ai_result = None
-                content = raw_processing_result.get('chatgpt')
-                if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
-                    is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
-                    ai_result = {'model': 'ChatGPT', 'content': content, 'is_error': is_error_msg}
+                # process_url_document already returns the ai_result dict
+                if isinstance(raw_processing_result.get('ai_result'), dict):
+                    ai_result = raw_processing_result['ai_result']
+                else:
+                    content = raw_processing_result.get('chatgpt')
+                    if content is not None and not (isinstance(content, str) and content.startswith("<Not executed")):
+                        is_error_msg = isinstance(content, str) and ("Error:" in content or "failed" in content.lower())
+                        ai_result = {'model': 'ChatGPT', 'content': content, 'is_error': is_error_msg}
                 
                 overall_error_message = raw_processing_result.get('error')
                 has_any_errors = bool(overall_error_message) or (ai_result is not None and ai_result.get('is_error'))
