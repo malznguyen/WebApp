@@ -580,7 +580,14 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                 elif isinstance(file_input, dict) and 'url' in file_input:
                     log_filename = file_input['url']
                     eel.processingProgress(process_id, 20, f"Processing URL: {log_filename}...")()
-                    raw_processing_result = process_url_document(file_input['url'], **normalized_settings)
+                    raw_processing_result = process_url_document(
+                        file_input['url'],
+                        chatgpt_key=normalized_settings.get('chatgpt_key'),
+                        summary_mode=normalized_settings.get('summary_mode', 'full'),
+                        summary_level=normalized_settings.get('summary_level', 50),
+                        word_count_limit=normalized_settings.get('word_count_limit', 500),
+                        target_language_code=normalized_settings.get('target_language_code')
+                    )
                 else:
                     file_data = file_input['file_data']
                     log_filename = file_input['filename']
