@@ -437,8 +437,7 @@ def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict
     """Validates and normalizes document processing settings received from the frontend."""
     normalized_settings: Dict[str, Any] = {}
     try:
-        use_ai = safe_bool(settings_from_frontend.get('use_ai', False))
-        normalized_settings['chatgpt_key'] = CHATGPT_API_KEY if use_ai else None
+        normalized_settings['chatgpt_key'] = CHATGPT_API_KEY
         
         normalized_settings['summary_mode'] = settings_from_frontend.get('summary_mode', 'full')
         normalized_settings['summary_level'] = safe_int(settings_from_frontend.get('detail_level', 50), default=50, min_val=10, max_val=90)
@@ -537,22 +536,22 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
             
             raw_processing_result: Dict[str, Any] = {}
 
-            if isinstance(file_input, list): # BATCH PROCESSING
-                log_filename = f"{len(file_input)} documents in batch"
+            if isinstance(file_input, dict) and 'files' in file_input:
+                file_list = file_input.get('files', [])
+                url_list = file_input.get('urls', [])
+                log_filename = f"{len(file_list)} files / {len(url_list)} urls batch"
                 eel.processingProgress(process_id, 10, f"Uploading {log_filename}...")()
-                
-                # Upload all files and collect temp paths
-                for i, item_dict in enumerate(file_input):
-                    eel.processingProgress(process_id, 10 + int(i / len(file_input) * 15), f"Uploading {item_dict.get('filename', 'file ' + str(i+1))}...")()
+
+                for i, item_dict in enumerate(file_list):
+                    eel.processingProgress(process_id, 10 + int(i / max(len(file_list),1) * 15), f"Uploading {item_dict.get('filename', 'file ' + str(i+1))}...")()
                     upload_resp = upload_file_web(item_dict['file_data'], item_dict['filename'])
-                    if not upload_resp['success']: 
+                    if not upload_resp['success']:
                         raise IOError(f"Upload failed for {item_dict['filename']}: {upload_resp.get('error', 'Unknown error')}")
                     temp_files_for_batch.append(upload_resp['temp_path'])
-                
+
                 eel.processingProgress(process_id, 30, "Starting batch synthesis...")()
-                
-                # 🚨 NOW THIS WILL WORK!
-                raw_processing_result = process_documents_batch_web(temp_files_for_batch, normalized_settings)
+
+                raw_processing_result = process_documents_batch_web(temp_files_for_batch, normalized_settings, urls=url_list)
                 logger.info(f"Batch processing result structure: {list(raw_processing_result.keys())}")
 
                 # Format batch result for frontend
@@ -567,17 +566,15 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     'ai_result': ai_result,
                     'processed_files': raw_processing_result.get('processed_files', []),
                     'failed_files': raw_processing_result.get('failed_files', []),
+                    'processed_urls': raw_processing_result.get('processed_urls', []),
+                    'failed_urls': raw_processing_result.get('failed_urls', []),
                     'concatenated_text_char_count': raw_processing_result.get('concatenated_text_char_count', 0),
                     'overall_error': raw_processing_result.get('overall_error'),
                     'has_errors': bool(raw_processing_result.get('overall_error')) or (ai_result is not None and ai_result.get('is_error'))
                 }
 
-            else: # SINGLE ITEM PROCESSING (File or Text or URL)
-                if isinstance(file_input, dict) and 'direct_text_content' in file_input:
-                    log_filename = file_input.get('text_input_name', 'Direct Text Input')
-                    eel.processingProgress(process_id, 20, f"Processing direct text: {log_filename}...")()
-                    raw_processing_result = process_document(input_text_to_process=file_input['direct_text_content'], **normalized_settings)
-                elif isinstance(file_input, dict) and 'url' in file_input:
+            else: # SINGLE ITEM PROCESSING (File or URL)
+                if isinstance(file_input, dict) and 'url' in file_input:
                     log_filename = file_input['url']
                     eel.processingProgress(process_id, 20, f"Processing URL: {log_filename}...")()
                     raw_processing_result = process_url_document(
