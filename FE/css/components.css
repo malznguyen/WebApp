@@ -616,6 +616,29 @@ button.btn {
     border-top-color: var(--gray-900);
 }
 
+/* ===== ACTION HUB ===== */
+.action-hub .action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.action-hub .action-row:last-child {
+    border-bottom: none;
+}
+
+.action-hub .settings-btn {
+    color: var(--gray-400);
+    font-size: 14px;
+    transition: color 0.2s ease;
+}
+
+.action-hub .settings-btn:hover {
+    color: var(--gray-600);
+}
+
 /* ===== AI DETECTION METER ===== */
 .ai-prob-meter {
     width: 100%;

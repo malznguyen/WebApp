@@ -2,8 +2,7 @@ const ImageVision = {
     // Vision settings và state
     settings: {
         language: 'vietnamese',
-        detailLevel: 'detailed',
-        autoAnalyze: false
+        detailLevel: 'detailed'
     },
 
     // Validate settings for vision analysis
@@ -104,10 +103,6 @@ const ImageVision = {
                         </select>
                     </div>
                     
-                    <div class="flex items-center space-x-2">
-                        <input type="checkbox" id="autoAnalyzeVision" class="form-checkbox">
-                        <label for="autoAnalyzeVision" class="text-sm text-gray-700">Auto-analyze when image selected</label>
-                    </div>
                 </div>
             </div>
         `;

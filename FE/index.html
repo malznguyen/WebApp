@@ -153,133 +153,85 @@
                         </div>
                     </div>
 
-                    <div x-show="selectedImage && visionCapabilities.available" class="card p-4">
-                        <h4 class="font-medium text-gray-900 mb-3 flex items-center">
-                            <i class="fas fa-eye mr-2 text-blue-600"></i> Vision Analysis
-                        </h4>
-                        <div class="space-y-3">
-                            <div>
-                                <label for="visionLanguage"
-                                    class="block text-sm font-medium text-gray-600">Language</label>
-                                <select id="visionLanguage" x-model="visionSettings.language"
-                                    class="form-input w-full text-sm py-1.5 focus-ring mt-1">
-                                    <option value="vietnamese">Vietnamese</option>
-                                    <option value="english">English</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label for="visionDetailLevel" class="block text-sm font-medium text-gray-600">Detail
-                                    Level</label>
-                                <select id="visionDetailLevel" x-model="visionSettings.detailLevel"
-                                    class="form-input w-full text-sm py-1.5 focus-ring mt-1">
-                                    <option value="brief">Brief</option>
-                                    <option value="detailed">Detailed</option>
-                                    <option value="extensive">Extensive</option>
-                                </select>
-                            </div>
-                            <label class="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-50 rounded-md">
-                                <input type="checkbox" x-model="visionSettings.autoAnalyze"
-                                    class="form-checkbox text-blue-600 focus:ring-blue-500">
-                                <span class="text-sm text-gray-700">Auto-analyze on upload</span>
-                            </label>
-                            <button class="btn btn-secondary w-full" @click="analyzeImageWithVision()"
-                                :disabled="visionState.isAnalyzing || !visionCapabilities.apiConfigured">
-                                <span x-show="!visionState.isAnalyzing"><i
-                                        class="fas fa-wand-magic-sparkles mr-2"></i>Describe Image</span>
-                                <span x-show="visionState.isAnalyzing" class="flex items-center justify-center">
-                                    <div
-                                        class="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2">
-                                    </div>
-                                    Analyzing...
-                                </span>
-                            </button>
-                            <p x-show="!visionCapabilities.apiConfigured"
-                                class="text-xs text-center text-yellow-600 bg-yellow-100 p-2 rounded-md">
-                                Vision API key not configured.
-                            </p>
-                        </div>
-                        <div x-show="visionState.isAnalyzing" class="space-y-2 pt-3">
-                            <div class="progress-container">
-                                <div class="progress-bar" :style="'width: ' + visionState.progress + '%'"></div>
-                            </div>
-                            <p class="text-xs text-gray-600 text-center" x-text="visionState.status"></p>
-                        </div>
-                    </div>
-
-                    <div x-show="selectedImage && visionCapabilities.available" class="card p-4">
-                        <h4 class="font-medium text-gray-900 mb-3 flex items-center">
-                            <i class="fas fa-robot mr-2 text-red-600"></i> AI Detection
-                        </h4>
-                        <div class="space-y-3">
-                            <label class="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-50 rounded-md">
-                                <input type="checkbox" x-model="detectionSettings.autoAnalyze" class="form-checkbox text-blue-600 focus:ring-blue-500">
-                                <span class="text-sm text-gray-700">Auto-detect on upload</span>
-                            </label>
-                            <button class="btn btn-secondary w-full" @click="analyzeImageForAI()" :disabled="detectionState.isAnalyzing || !visionCapabilities.apiConfigured">
-                                <span x-show="!detectionState.isAnalyzing"><i class="fas fa-search mr-2"></i>Detect AI Image</span>
-                                <span x-show="detectionState.isAnalyzing" class="flex items-center justify-center">
-                                    <div class="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
-                                    Detecting...
-                                </span>
-                            </button>
-                        </div>
-                        <div x-show="detectionState.isAnalyzing" class="space-y-2 pt-3">
-                            <div class="progress-container">
-                                <div class="progress-bar" :style="'width: ' + detectionState.progress + '%'"></div>
-                            </div>
-                            <p class="text-xs text-gray-600 text-center" x-text="detectionState.status"></p>
-                        </div>
-                    </div>
-
                     <div x-show="selectedImage" class="card p-4">
                         <h4 class="font-medium text-gray-900 mb-3 flex items-center">
-                            <i class="fas fa-info-circle mr-2 text-indigo-600"></i> Image Metadata
+                            <i class="fas fa-layer-group mr-2 text-blue-600"></i> Analysis &amp; Search
                         </h4>
-                        <div class="space-y-3">
-                            <label class="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-50 rounded-md">
-                                <input type="checkbox" x-model="metadataSettings.autoAnalyze" class="form-checkbox text-blue-600 focus:ring-blue-500">
-                                <span class="text-sm text-gray-700">Auto-analyze on upload</span>
-                            </label>
-                            <button class="btn btn-secondary w-full" @click="analyzeImageMetadata()" :disabled="metadataState.isAnalyzing">
-                                <span x-show="!metadataState.isAnalyzing"><i class="fas fa-chart-bar mr-2"></i>Analyze Metadata</span>
-                                <span x-show="metadataState.isAnalyzing" class="flex items-center justify-center">
-                                    <div class="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
-                                    Processing...
-                                </span>
-                            </button>
-                        </div>
-                        <div x-show="metadataState.error" class="text-xs text-red-700 bg-red-100 p-2 mt-2 rounded-md" x-text="metadataState.error"></div>
-                    </div>
-
-                    <div x-show="selectedImage" class="card p-4">
-                        <h4 class="font-medium text-gray-900 mb-3"><i
-                                class="fas fa-search mr-2 text-gray-500"></i>Reverse Search</h4>
-                        <label class="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded-md">
-                            <input type="checkbox" x-model="searchOptions.socialOnly"
-                                class="form-checkbox text-blue-600 focus:ring-blue-500">
-                            <span class="text-sm text-gray-700">Search only on social media</span>
-                        </label>
-                    </div>
-
-                    <div x-show="selectedImage" class="space-y-2">
-                        <button class="btn btn-primary w-full btn-lg" :disabled="!canSearch || isSearching"
-                            :class="{'opacity-50 cursor-not-allowed': !canSearch || isSearching}"
-                            @click="startImageSearch()">
-                            <span class="flex items-center justify-center">
-                                <i x-show="!isSearching" class="fas fa-search mr-2"></i>
-                                <div x-show="isSearching"
-                                    class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2">
+                        <div class="space-y-2 action-hub">
+                            <div class="action-row">
+                                <label class="flex items-center space-x-2">
+                                    <input type="checkbox" x-model="selectedActions.vision" class="form-checkbox text-blue-600 focus:ring-blue-500">
+                                    <span class="text-sm text-gray-700">Vision Analysis</span>
+                                </label>
+                                <button type="button" class="settings-btn" @click="settingsVisibility.vision = !settingsVisibility.vision"><i class="fas fa-cog"></i></button>
+                            </div>
+                            <div x-show="settingsVisibility.vision" class="pl-6 space-y-2">
+                                <div>
+                                    <label for="visionLanguage" class="block text-xs font-medium text-gray-600">Language</label>
+                                    <select id="visionLanguage" x-model="visionSettings.language" class="form-input w-full text-sm py-1.5 focus-ring mt-1">
+                                        <option value="vietnamese">Vietnamese</option>
+                                        <option value="english">English</option>
+                                    </select>
                                 </div>
-                                <span x-text="isSearching ? 'Searching...' : 'Start Search'"></span>
-                            </span>
-                        </button>
-                    </div>
+                                <div>
+                                    <label for="visionDetailLevel" class="block text-xs font-medium text-gray-600">Detail Level</label>
+                                    <select id="visionDetailLevel" x-model="visionSettings.detailLevel" class="form-input w-full text-sm py-1.5 focus-ring mt-1">
+                                        <option value="brief">Brief</option>
+                                        <option value="detailed">Detailed</option>
+                                        <option value="extensive">Extensive</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div x-show="visionState.isAnalyzing" class="pl-6 space-y-2 pt-2">
+                                <div class="progress-container">
+                                    <div class="progress-bar" :style="'width: ' + visionState.progress + '%'"></div>
+                                </div>
+                                <p class="text-xs text-gray-600 text-center" x-text="visionState.status"></p>
+                            </div>
 
-                    <div x-show="isSearching" class="space-y-2 pt-2">
-                        <div class="progress-container">
-                            <div class="progress-bar" :style="'width: ' + searchProgress + '%'"></div>
+                            <div class="action-row">
+                                <label class="flex items-center space-x-2">
+                                    <input type="checkbox" x-model="selectedActions.detection" class="form-checkbox text-blue-600 focus:ring-blue-500">
+                                    <span class="text-sm text-gray-700">AI Detection</span>
+                                </label>
+                            </div>
+                            <div x-show="detectionState.isAnalyzing" class="pl-6 space-y-2 pt-2">
+                                <div class="progress-container">
+                                    <div class="progress-bar" :style="'width: ' + detectionState.progress + '%'"></div>
+                                </div>
+                                <p class="text-xs text-gray-600 text-center" x-text="detectionState.status"></p>
+                            </div>
+
+                            <div class="action-row">
+                                <label class="flex items-center space-x-2">
+                                    <input type="checkbox" x-model="selectedActions.metadata" class="form-checkbox text-blue-600 focus:ring-blue-500">
+                                    <span class="text-sm text-gray-700">Image Metadata</span>
+                                </label>
+                            </div>
+
+                            <div class="action-row">
+                                <label class="flex items-center space-x-2">
+                                    <input type="checkbox" x-model="selectedActions.search" class="form-checkbox text-blue-600 focus:ring-blue-500">
+                                    <span class="text-sm text-gray-700">Reverse Search</span>
+                                </label>
+                                <button type="button" class="settings-btn" @click="settingsVisibility.search = !settingsVisibility.search"><i class="fas fa-cog"></i></button>
+                            </div>
+                            <div x-show="settingsVisibility.search" class="pl-6 space-y-2">
+                                <label class="flex items-center space-x-3 cursor-pointer p-1 hover:bg-gray-50 rounded-md">
+                                    <input type="checkbox" x-model="searchOptions.socialOnly" class="form-checkbox text-blue-600 focus:ring-blue-500">
+                                    <span class="text-sm text-gray-700">Search only on social media</span>
+                                </label>
+                            </div>
+                            <div x-show="isSearching" class="pl-6 space-y-2 pt-2">
+                                <div class="progress-container">
+                                    <div class="progress-bar" :style="'width: ' + searchProgress + '%'"></div>
+                                </div>
+                                <p class="text-sm text-gray-600 text-center" x-text="searchStatus"></p>
+                            </div>
                         </div>
-                        <p class="text-sm text-gray-600 text-center" x-text="searchStatus"></p>
+                        <button class="btn btn-primary w-full btn-lg mt-4" @click="runSelectedActions()" :disabled="Object.values(selectedActions).filter(Boolean).length === 0">
+                            <span x-text="'Run Selected (' + Object.values(selectedActions).filter(Boolean).length + ') Actions'"></span>
+                        </button>
                     </div>
                 </div>
             </div>

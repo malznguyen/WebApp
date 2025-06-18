@@ -20,8 +20,7 @@ function app() {
 
         visionSettings: {
             language: 'vietnamese',
-            detailLevel: 'detailed',
-            autoAnalyze: false
+            detailLevel: 'detailed'
         },
 
         visionState: {
@@ -32,9 +31,7 @@ function app() {
             taskId: null
         },
 
-        detectionSettings: {
-            autoAnalyze: false
-        },
+        detectionSettings: {},
 
         detectionState: {
             isAnalyzing: false,
@@ -44,14 +41,24 @@ function app() {
             taskId: null
         },
 
-        metadataSettings: {
-            autoAnalyze: false
-        },
+        metadataSettings: {},
 
         metadataState: {
             isAnalyzing: false,
             result: null,
             error: null
+        },
+
+        selectedActions: {
+            vision: false,
+            detection: false,
+            metadata: false,
+            search: false
+        },
+
+        settingsVisibility: {
+            vision: false,
+            search: false
         },
 
         // ===== IMAGE SEARCH STATE =====
@@ -297,18 +304,6 @@ function app() {
                 this.searchResults = [];
                 this.addLogEntry('success', `Image '${file.name}' loaded and ready for search.`);
                 this.showNotification('success', 'Image Loaded', `${file.name} is ready to search.`);
-                if (this.visionSettings.autoAnalyze && this.visionCapabilities.available) {
-                    await this.delay(500);
-                    this.analyzeImageWithVision();
-                }
-                if (this.detectionSettings.autoAnalyze && this.visionCapabilities.available) {
-                    await this.delay(500);
-                    this.analyzeImageForAI();
-                }
-                if (this.metadataSettings.autoAnalyze) {
-                    await this.delay(300);
-                    this.analyzeImageMetadata();
-                }
             } catch (error) {
                 this.addLogEntry('error', `Image processing failed for ${file.name}: ${error.message}`);
                 this.showNotification('error', 'Image Processing Error', error.message);
@@ -341,6 +336,15 @@ function app() {
             this.metadataState.result = null;
             this.metadataState.error = null;
             this.metadataState.isAnalyzing = false;
+        },
+
+        async runSelectedActions() {
+            const actions = [];
+            if (this.selectedActions.vision) actions.push(this.analyzeImageWithVision());
+            if (this.selectedActions.detection) actions.push(this.analyzeImageForAI());
+            if (this.selectedActions.metadata) actions.push(this.analyzeImageMetadata());
+            if (this.selectedActions.search) actions.push(this.startImageSearch());
+            if (actions.length) await Promise.all(actions);
         },
 
         async startImageSearch() {
