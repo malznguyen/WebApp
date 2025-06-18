@@ -811,6 +811,7 @@ def process_url_document(
 # 🚨 CRITICAL: BATCH SYNTHESIS FUNCTION - FIXED!
 def process_batch_synthesis(
     file_paths: List[str],
+    urls: Optional[List[str]] = None,
     chatgpt_key: Optional[str] = None,
     summary_mode: str = 'full',
     summary_level: int = 50,
@@ -823,7 +824,8 @@ def process_batch_synthesis(
     
     IMPORTANT: This function returns a DIFFERENT format than process_document!
     """
-    batch_task_name = f"Batch Synthesis of {len(file_paths)} documents"
+    urls = urls or []
+    batch_task_name = f"Batch Synthesis of {len(file_paths)} documents and {len(urls)} URLs"
     lang_str = f"Language: {_get_language_full_name(target_language_code)}"
     if summary_mode == 'percentage':
         detail_str = f"Detail: {summary_level}%"
@@ -836,38 +838,80 @@ def process_batch_synthesis(
     results: Dict[str, Any] = {
         'processed_files': [],
         'failed_files': [],
+        'processed_urls': [],
+        'failed_urls': [],
         'concatenated_text_char_count': 0,
         'chatgpt_synthesis': None,
         'overall_error': None
     }
-    
+
     all_extracted_texts: List[str] = []
     extraction_errors: List[str] = []
+    url_errors: List[str] = []
 
-    # 1. Extract text from all documents
-    logger.info(f"Extracting text from {len(file_paths)} documents for batch synthesis...")
-    for file_path in file_paths:
-        file_name = os.path.basename(file_path)
+    # 1. Extract text from files and summarize URLs in parallel
+    logger.info(
+        f"Extracting text from {len(file_paths)} documents and summarizing {len(urls)} URLs for batch synthesis..."
+    )
+
+    def _extract_file(path: str):
+        name = os.path.basename(path)
         try:
-            text = extract_text(file_path)
-            if text and text.strip():
-                all_extracted_texts.append(text)
-                results['processed_files'].append(file_name)
+            text = extract_text(path)
+            return ("file", name, text, None)
+        except Exception as e:
+            return ("file", name, None, str(e))
+
+    def _summarize_url(one_url: str):
+        try:
+            summary = summarize_url_with_search_model(
+                one_url,
+                chatgpt_key,
+                summary_mode=summary_mode,
+                summary_level=summary_level,
+                word_count_limit=word_count_limit,
+                target_language_code=target_language_code,
+            )
+            if isinstance(summary, str) and summary.startswith("ChatGPT Search Error"):
+                return ("url", one_url, None, summary)
+            return ("url", one_url, summary, None)
+        except Exception as e:
+            return ("url", one_url, None, str(e))
+
+    tasks = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_API_WORKERS) as executor:
+        for fp in file_paths:
+            tasks.append(executor.submit(_extract_file, fp))
+        for u in urls:
+            tasks.append(executor.submit(_summarize_url, u))
+
+        for future in concurrent.futures.as_completed(tasks):
+            source_type, identifier, text, error = future.result()
+            if source_type == "file":
+                if text and text.strip():
+                    all_extracted_texts.append(text)
+                    results['processed_files'].append(identifier)
+                else:
+                    msg = error or "No content or empty."
+                    extraction_errors.append(f"'{identifier}': {msg}")
+                    results['failed_files'].append((identifier, msg))
             else:
-                logger.warning(f"No content extracted from '{file_name}' or content was empty; skipping for batch.")
-                extraction_errors.append(f"'{file_name}': No content or empty.")
-                results['failed_files'].append((file_name, "No content or empty"))
-        except Exception as ext_err:
-            logger.error(f"Failed to extract text from '{file_name}' for batch: {ext_err}", exc_info=False)
-            extraction_errors.append(f"'{file_name}': {ext_err}")
-            results['failed_files'].append((file_name, str(ext_err)))
+                if text and text.strip():
+                    all_extracted_texts.append(text)
+                    results['processed_urls'].append(identifier)
+                else:
+                    msg = error or "No content or empty."
+                    url_errors.append(f"'{identifier}': {msg}")
+                    results['failed_urls'].append((identifier, msg))
 
     if not all_extracted_texts:
-        err_msg = "No text could be extracted from any of the provided documents for batch synthesis."
+        err_msg = "No text could be extracted from any of the provided documents or URLs for batch synthesis."
         logger.error(err_msg)
         results['overall_error'] = err_msg
         if extraction_errors:
              results['overall_error'] += " Extraction issues: " + "; ".join(extraction_errors)
+        if url_errors:
+             results['overall_error'] += " URL issues: " + "; ".join(url_errors)
         return results
 
     concatenated_text = DOCUMENT_SEPARATOR.join(all_extracted_texts)
@@ -933,9 +977,11 @@ def process_batch_synthesis(
             batch_api_error_messages.append(content)
     
     final_batch_error_parts = []
-    if extraction_errors: 
+    if extraction_errors:
         final_batch_error_parts.append(f"Extraction issues with files: {'; '.join(extraction_errors)}")
-    if batch_api_error_messages: 
+    if url_errors:
+        final_batch_error_parts.append(f"URL issues: {'; '.join(url_errors)}")
+    if batch_api_error_messages:
         final_batch_error_parts.extend(batch_api_error_messages)
 
     if final_batch_error_parts:
@@ -951,14 +997,16 @@ def process_batch_synthesis(
 
 
 # 🆕 NEW WRAPPER FUNCTION FOR WEB API CONSISTENCY
-def process_documents_batch_web(file_paths: List[str], settings: Dict[str, Any]) -> Dict[str, Any]:
+def process_documents_batch_web(file_paths: List[str], settings: Dict[str, Any], urls: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Web API wrapper for batch synthesis to match expected interface in main.py
     
     This ensures consistent parameter handling between single and batch processing.
     """
-    if not isinstance(file_paths, list) or not file_paths:
-        raise ValueError("file_paths must be a non-empty list of file paths")
+    if not isinstance(file_paths, list):
+        raise ValueError("file_paths must be a list of file paths")
+    if not file_paths and not urls:
+        raise ValueError("At least one document file or URL must be provided")
     
     if not isinstance(settings, dict):
         settings = {}
@@ -972,11 +1020,13 @@ def process_documents_batch_web(file_paths: List[str], settings: Dict[str, Any])
     # Get API key from settings
     chatgpt_key = settings.get('chatgpt_key')
     
-    logger.info(f"process_documents_batch_web called with {len(file_paths)} files, settings: {settings}")
+    urls = urls or []
+    logger.info(f"process_documents_batch_web called with {len(file_paths)} files and {len(urls)} urls, settings: {settings}")
     
     # Call the actual batch synthesis function
     return process_batch_synthesis(
         file_paths=file_paths,
+        urls=urls,
         chatgpt_key=chatgpt_key,
         summary_mode=summary_mode,
         summary_level=summary_level,

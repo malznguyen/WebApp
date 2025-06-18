@@ -514,22 +514,6 @@
                         </div>
                     </div>
 
-                    <div class="card bg-white rounded-lg shadow">
-                        <div class="p-4">
-                            <h3 class="font-medium text-gray-900 mb-3 flex items-center"><i
-                                    class="fas fa-paragraph mr-2 text-blue-500"></i> Direct Text Input</h3>
-                            <textarea x-model="directInputText" rows="4"
-                                class="form-input w-full text-sm mb-2 focus-ring"
-                                placeholder="Paste or type text..."></textarea>
-                            <input type="text" x-model="directInputName"
-                                class="form-input w-full text-sm mb-3 focus-ring"
-                                placeholder="Optional: Name for this text">
-                            <button @click="addDirectTextToQueue()" class="btn btn-secondary w-full btn-sm"
-                                :disabled="!directInputText.trim()">
-                                <i class="fas fa-plus mr-2"></i> Add Text to Queue
-                            </button>
-                        </div>
-                    </div>
 
                     <!-- REFACTORED SUMMARY MODE SELECTION -->
                     <div class="card bg-white rounded-lg shadow">
@@ -673,25 +657,13 @@
                                     class="flex items-center space-x-2.5 cursor-pointer p-1.5 rounded-md hover:bg-gray-100 transition-colors">
                                     <input type="radio" name="processingMode" value="batch" x-model="processingMode"
                                         class="form-checkbox text-blue-600 focus:ring-offset-0 focus:ring-blue-500 focus-ring h-4 w-4">
-                                    <span class="text-sm text-gray-700">Batch Synthesis (Files Only)</span>
+                                    <span class="text-sm text-gray-700">Batch Synthesis</span>
                                 </label>
                             </div>
                         </div>
                     </div>
 
-                    <div class="card bg-white rounded-lg shadow p-3 flex items-center justify-between">
-                        <div class="flex items-center space-x-2">
-                            <i class="fas fa-robot text-gray-500 w-5 text-center"></i>
-                            <h3 class="font-medium text-sm text-gray-800">Enable AI Summarization</h3>
-                        </div>
-                        <label class="flex items-center cursor-pointer">
-                            <input type="checkbox" class="sr-only" x-model="useAI">
-                            <div class="toggle-label block bg-gray-200 w-10 h-5 rounded-full relative">
-                                <div class="toggle-ball absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full shadow transform"
-                                    :class="useAI ? 'translate-x-full' : ''"></div>
-                            </div>
-                        </label>
-                    </div>
+
 
                     <div class="card bg-white rounded-lg shadow">
                         <div @click="settingsPanels.language = !settingsPanels.language"
@@ -756,7 +728,7 @@
                                         :class="{ 'bg-blue-50 ring-1 ring-blue-200': activePreviewFileId === item.id, 'hover:bg-gray-100': activePreviewFileId !== item.id }"
                                         @click="setActivePreviewFile(item.id)">
                                         <div class="flex items-center space-x-2 flex-1 min-w-0">
-                                            <i :class="item.isDirectText ? 'fas fa-keyboard' : 'fas fa-file-alt'"
+                                            <i :class="item.isUrl ? 'fas fa-link' : 'fas fa-file-alt'"
                                                 class="text-gray-400 text-sm flex-shrink-0 w-4 text-center"></i>
                                             <div class="flex-1 min-w-0">
                                                 <p class="text-xs font-medium text-gray-700 truncate"

@@ -75,8 +75,6 @@ function app() {
         detailLevel: 50, // Only used when summaryMode === 'percentage'
         wordCountLimit: 500, // Only used when summaryMode === 'word-count'
 
-        // Simple toggle for AI usage
-        useAI: true,
         targetLanguage: null,
         isProcessing: false,
         processingQueue: [],
@@ -96,8 +94,6 @@ function app() {
             advanced: false
         },
 
-        directInputText: '',
-        directInputName: '',
         urlInput: '',
         activeProcessIdToItemId: {},
 
@@ -242,7 +238,6 @@ function app() {
             const config = await eel.get_app_config()();
             if (config && config.status === 'ready') {
                 this.addLogEntry('info', `Config loaded - SERP:${config.has_serp_api}, Imgur:${config.has_imgur}, ChatGPT:${config.has_chatgpt}, Vision:${config.has_vision}`);
-                this.useAI = !!config.has_chatgpt;
                 this.canSearch = !!(config.has_serp_api && config.has_imgur);
                 this.visionCapabilities.available = !!config.vision_available;
                 this.visionCapabilities.apiConfigured = !!config.has_vision;
@@ -253,7 +248,6 @@ function app() {
 
         getMockConfig() {
             this.addLogEntry('info', 'Setting mock configuration.');
-            this.useAI = true;
         },
 
         setupEventListeners() {
@@ -739,8 +733,7 @@ function app() {
                         size: file.size,
                         file: file,
                         status: 'Ready',
-                        type: this.getFileType(file.name),
-                        isDirectText: false
+                        type: this.getFileType(file.name)
                     };
                     this.processingQueue.push(item);
                     validFilesAddedCount++;
@@ -764,32 +757,6 @@ function app() {
             this.isLoading = false;
         },
 
-        async addDirectTextToQueue() {
-            if (!this.directInputText.trim()) {
-                this.showNotification('warning', 'Empty Text', 'Please enter some text to process.');
-                return;
-            }
-            const textName = this.directInputName.trim() || `Pasted Text ${this.processingQueue.filter(i => i.isDirectText).length + 1}`;
-            const item = {
-                id: Common.generateId(),
-                name: textName,
-                size: new TextEncoder().encode(this.directInputText).length,
-                content: this.directInputText,
-                status: 'Ready',
-                type: 'Direct Text',
-                isDirectText: true,
-                file: null
-            };
-            this.processingQueue.push(item);
-            this.addLogEntry('info', `Direct text input '${item.name}' added to processing queue.`);
-            this.showNotification('success', 'Text Added', `'${item.name}' has been added to the queue.`);
-            this.directInputText = '';
-            this.directInputName = '';
-            this.canProcess = this.processingQueue.some(i => i.status === 'Ready');
-            if (!this.activePreviewFileId && this.processingQueue.length > 0) {
-                await this.setActivePreviewFile(item.id);
-            }
-        },
 
         async addUrlToQueue() {
             const url = this.urlInput.trim();
@@ -810,7 +777,6 @@ function app() {
                 status: 'Ready',
                 type: 'URL',
                 isUrl: true,
-                isDirectText: false,
                 file: null
             };
             this.processingQueue.push(item);
@@ -836,15 +802,7 @@ function app() {
                 this.analysisData = null;
                 this.contentTab = 'original';
 
-                if (fileItem.isDirectText) {
-                    this.isLoading = true;
-                    this.loadingTitle = 'Loading Preview';
-                    this.loadingMessage = `Displaying direct text: ${fileItem.name}...`;
-                    this.originalContent = fileItem.content;
-                    this.addLogEntry('success', `Preview loaded for direct text: '${fileItem.name}'.`);
-                    await this.delay(50);
-                    this.isLoading = false;
-                } else if (fileItem.file) {
+                if (fileItem.file) {
                     await this.displayDocumentContentOnUpload(fileItem.file);
                 } else if (fileItem.isUrl) {
                     this.originalContent = `URL: ${fileItem.url}\nNo preview available. Start processing to fetch content.`;
@@ -942,9 +900,9 @@ function app() {
             let currentRunIsBatch = this.processingMode === 'batch';
 
             if (currentRunIsBatch) {
-                itemsToProcess = this.processingQueue.filter(item => item.status === 'Ready' && !item.isDirectText && !item.isUrl);
+                itemsToProcess = this.processingQueue.filter(item => item.status === 'Ready');
                 if (itemsToProcess.length === 0) {
-                    this.showNotification('info', 'No Files for Batch', 'Batch mode processes files. No ready files found.');
+                    this.showNotification('info', 'No Items for Batch', 'No ready items found.');
                     return;
                 }
             } else {
@@ -984,12 +942,12 @@ function app() {
                 if (this.backendConnected) {
                     if (currentRunIsBatch) {
                         itemsToProcess.forEach(item => item.status = 'Processing...');
-                        this.addLogEntry('info', `Starting batch processing for ${itemsToProcess.length} files.`);
-                        const batchFilePayloads = await Promise.all(itemsToProcess.map(async item => {
-                            const base64Data = await this.fileToBase64(item.file);
-                            return { file_data: base64Data, filename: item.name };
-                        }));
-                        const processId = await eel.process_document_async_web(batchFilePayloads, settingsPayload)();
+                        this.addLogEntry('info', `Starting batch processing for ${itemsToProcess.length} items.`);
+                        const batchPayload = {
+                            files: await Promise.all(itemsToProcess.filter(i => i.file).map(async item => ({ file_data: await this.fileToBase64(item.file), filename: item.name }))),
+                            urls: itemsToProcess.filter(i => i.isUrl).map(i => i.url)
+                        };
+                        const processId = await eel.process_document_async_web(batchPayload, settingsPayload)();
                         this.activeProcessIdToItemId[processId] = itemsToProcess.map(item => item.id);
                         this.addLogEntry('info', `Batch task (ID: ${processId}) sent to backend for ${itemsToProcess.length} items.`);
                     } else {
@@ -997,9 +955,7 @@ function app() {
                         item.status = 'Processing...';
                         this.addLogEntry('info', `Starting processing for '${item.name}'.`);
                         let inputPayload;
-                        if (item.isDirectText) {
-                            inputPayload = { direct_text_content: item.content, text_input_name: item.name };
-                        } else if (item.isUrl) {
+                        if (item.isUrl) {
                             inputPayload = { url: item.url };
                         } else {
                             const base64Data = await this.fileToBase64(item.file);
@@ -1029,7 +985,6 @@ function app() {
         buildProcessingSettings() {
             const settings = {
                 processing_mode: this.processingMode,
-                use_ai: this.useAI,
                 language: this.targetLanguage,
                 summary_mode: this.summaryMode,  // 'full' | 'percentage' | 'word-count'
             };
@@ -1053,9 +1008,7 @@ function app() {
             await this.delay(1000 + Math.random() * 1500);
 
             let demoOriginalContent;
-            if (item.isDirectText) {
-                demoOriginalContent = `[DEMO CONTENT from DIRECT TEXT]\n\n--- ${item.name} ---\n\n${item.content.substring(0, 500)}${item.content.length > 500 ? '...' : ''}`;
-            } else if (item.file) {
+            if (item.file) {
                 demoOriginalContent = `[DEMO CONTENT from FILE: ${item.name}]\n\nMock content.`;
             } else if (item.isUrl) {
                 demoOriginalContent = `[DEMO] URL input: ${item.url}`;
@@ -1076,22 +1029,14 @@ function app() {
                 summaryModeText = ' (full summary)';
             }
 
-            if (this.useAI) {
-                demoAiResults.push({
-                    model: 'ChatGPT',
-                    content: `[DEMO] ChatGPT for ${item.name}${langText}${summaryModeText}.`,
-                    is_error: false
-                });
-            } else {
-                demoAiResults.push({
-                    model: 'N/A',
-                    content: '[DEMO] AI disabled.',
-                    is_error: true
-                });
-            }
+            demoAiResults.push({
+                model: 'ChatGPT',
+                content: `[DEMO] ChatGPT for ${item.name}${langText}${summaryModeText}.`,
+                is_error: false
+            });
 
             const demoAnalysisData = {
-                word_count: Math.floor(Math.random() * 500) + (item.isDirectText ? item.size / 5 : 50),
+                word_count: Math.floor(Math.random() * 500) + 50,
                 sentence_count: Math.floor(Math.random() * 20) + 5,
                 paragraph_count: Math.floor(Math.random() * 5) + 1,
                 avg_word_length: (Math.random() * 2 + 4.5).toFixed(1),
