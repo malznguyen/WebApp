@@ -73,6 +73,10 @@ function app() {
         viewMode: 'list',
         canSearch: false,
         selectedImage: null,
+        selectedVideo: null,
+        videoActions: { metadata: false, audio: false, transcribe: false, export: false, report: false },
+        videoMetadata: null,
+        videoTranscript: '',
 
         // ===== DOCUMENT PROCESSING STATE =====
         processingMode: 'individual',
@@ -264,12 +268,14 @@ function app() {
                 e.preventDefault(); e.stopPropagation();
                 if (this.activeTab === 'image-search') this.handleImageDrop(e);
                 else if (this.activeTab === 'document-summary') this.handleDocumentDrop(e);
+                else if (this.activeTab === 'video-processing') this.handleVideoDrop(e);
             });
             document.addEventListener('keydown', (e) => {
                 if (e.ctrlKey || e.metaKey) {
                     const key = e.key.toLowerCase();
                     if (key === '1') { e.preventDefault(); this.activeTab = 'image-search'; }
                     else if (key === '2') { e.preventDefault(); this.activeTab = 'document-summary'; }
+                    else if (key === '3') { e.preventDefault(); this.activeTab = 'video-processing'; }
                     else if (key === 'l') { e.preventDefault(); this.logPanelExpanded = !this.logPanelExpanded; }
                 }
             });
@@ -610,6 +616,62 @@ function app() {
             if (this.metadataState.result) {
                 const base = this.selectedImage?.name?.replace(/\.[^/.]+$/, '') || 'image_metadata';
                 ImageMetadata.exportMetadata(this.metadataState.result, base, format);
+            }
+        },
+
+        browseVideoFiles() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm';
+            input.onchange = (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    this.processVideoFile(e.target.files[0]);
+                }
+            };
+            input.click();
+        },
+
+        handleVideoDrop(event) {
+            const files = Array.from(event.dataTransfer.files).filter(f => f.type.startsWith('video/'));
+            if (files.length) this.processVideoFile(files[0]);
+        },
+
+        async processVideoFile(file) {
+            const check = VideoAnalysis.validateVideoFile(file);
+            if (!check.valid) {
+                this.showNotification('error', 'Invalid Video', check.error);
+                return;
+            }
+            this.isLoading = true;
+            this.loadingTitle = 'Loading Video';
+            try {
+                const base64 = await this.fileToBase64(file);
+                this.selectedVideo = {
+                    name: file.name,
+                    size: file.size,
+                    data: base64,
+                    preview: URL.createObjectURL(file)
+                };
+                this.videoMetadata = null;
+                this.videoTranscript = '';
+                this.showNotification('success', 'Video Loaded', `${file.name} ready`);
+                this.addLogEntry('info', `Video ${file.name} loaded`);
+            } catch (err) {
+                this.showNotification('error', 'Load Failed', err.message);
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        async runVideoActions() {
+            if (!this.selectedVideo) return;
+            if (this.videoActions.metadata) {
+                const res = await VideoAnalysis.extractMetadata(this.selectedVideo.data, this.selectedVideo.name);
+                if (res && res.success) this.videoMetadata = res; else this.showNotification('error', 'Metadata Error', res.error);
+            }
+            if (this.videoActions.transcribe) {
+                const res = await VideoAnalysis.transcribeVideo(this.selectedVideo.data, this.selectedVideo.name);
+                if (res && res.success) this.videoTranscript = res.transcript || ''; else this.showNotification('error', 'Transcription Error', res.error);
             }
         },
 

@@ -12,6 +12,10 @@ API_TIMEOUT_SEC = 180
 MAX_CHUNK_SIZE = 100000  # Kích thước tối đa của một chunk văn bản
 SUPPORTED_DOC_FORMATS = ['.pdf', '.docx', '.txt', '.md']
 
+# Video processing
+SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm']
+MAX_VIDEO_SIZE_MB = 500
+
 # Kích thước ảnh xem trước
 PREVIEW_MAX_SIZE = 150
 

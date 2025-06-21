@@ -15,6 +15,12 @@ const FileHandler = {
             mimeTypes: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'],
             maxSize: 50 * 1024 * 1024, // 50MB
             description: 'Document files'
+        },
+        video: {
+            extensions: ['.mp4', '.mov', '.avi', '.mkv', '.webm'],
+            mimeTypes: ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'video/webm'],
+            maxSize: 500 * 1024 * 1024,
+            description: 'Video files'
         }
     },
 
@@ -226,6 +232,8 @@ const FileHandler = {
             switch (previewType === 'auto' ? fileType : previewType) {
                 case 'image':
                     return await this.createImagePreview(file);
+                case 'video':
+                    return await this.createVideoPreview(file);
                 case 'text':
                     return await this.createTextPreview(file);
                 case 'document':
@@ -246,6 +254,15 @@ const FileHandler = {
             type: 'image',
             content: dataUrl,
             metadata: await this.getImageMetadata(file)
+        };
+    },
+
+    // Create video preview
+    async createVideoPreview(file) {
+        const url = URL.createObjectURL(file);
+        return {
+            type: 'video',
+            content: url
         };
     },
 

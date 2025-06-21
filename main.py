@@ -48,6 +48,10 @@ try:
     )
     from BE.core.image_processing import validate_image_upload
     from BE.core.image_metadata import ImageMetadataExtractor
+    from BE.core.video_processing import (
+        extract_comprehensive_metadata,
+        transcribe_with_timestamps,
+    )
     logger.info("✅ Core modules imported successfully.")
 except ImportError as e:
     logger.critical(f"❌ Failed to import a core backend module: {e}", exc_info=True)
@@ -433,6 +437,38 @@ def analyze_image_metadata(image_data_base64: str, filename: str, include_sensit
         logger.error(f"Metadata analysis failed for '{filename}': {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
+@eel.expose
+def extract_video_metadata(video_data_base64: str, filename: str) -> Dict[str, Any]:
+    """Extract comprehensive metadata from a video file."""
+    temp_path: Optional[str] = None
+    try:
+        video_bytes = validate_base64_data(video_data_base64, "data:video")
+        temp_path = create_temp_file(video_bytes, filename)
+        return extract_comprehensive_metadata(temp_path)
+    except Exception as e:
+        logger.error(f"Video metadata extraction failed for '{filename}': {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+    finally:
+        if temp_path:
+            cleanup_temp_file(temp_path)
+
+@eel.expose
+def transcribe_video_async_web(video_data_base64: str, filename: str) -> Dict[str, Any]:
+    """Transcribe video audio using Whisper."""
+    temp_path: Optional[str] = None
+    try:
+        video_bytes = validate_base64_data(video_data_base64, "data:video")
+        temp_path = create_temp_file(video_bytes, filename)
+        segments = transcribe_with_timestamps(temp_path)
+        transcript_text = " ".join(seg.get('text', '') for seg in segments)
+        return {"success": True, "segments": segments, "transcript": transcript_text}
+    except Exception as e:
+        logger.error(f"Video transcription failed for '{filename}': {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+    finally:
+        if temp_path:
+            cleanup_temp_file(temp_path)
+
 def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
     """Validates and normalizes document processing settings received from the frontend."""
     normalized_settings: Dict[str, Any] = {}
@@ -732,7 +768,9 @@ def _verify_imports():
         ('process_url_document', process_url_document),
         ('extract_text', extract_text),
         ('validate_image_upload', validate_image_upload),
-        ('search_image_sync', search_image_sync)
+        ('search_image_sync', search_image_sync),
+        ('extract_video_metadata', extract_video_metadata),
+        ('transcribe_video_async_web', transcribe_video_async_web)
     ]
     
     for func_name, func_obj in required_functions:

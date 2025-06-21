@@ -82,6 +82,13 @@
                     <span class="hidden sm:inline">Document Summary</span>
                     <span class="sm:hidden">Docs</span>
                 </button>
+                <button @click="activeTab = 'video-processing'"
+                    :class="activeTab === 'video-processing' ? 'tab-button active' : 'tab-button'"
+                    class="px-3 sm:px-6 py-2 font-medium rounded-t-lg transition-colors text-sm sm:text-base">
+                    <i class="fas fa-video mr-1 sm:mr-2"></i>
+                    <span class="hidden sm:inline">Video Processing</span>
+                    <span class="sm:hidden">Video</span>
+                </button>
             </nav>
 
             <div class="flex items-center space-x-2 sm:space-x-4">
@@ -918,6 +925,57 @@
                 </div>
             </div>
         </div>
+
+        <div x-show="activeTab === 'video-processing'" x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" class="h-full">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 sm:p-6 max-w-screen-2xl mx-auto">
+                <div class="lg:col-span-3 space-y-4">
+                    <div class="card bg-white rounded-lg shadow">
+                        <div class="p-4">
+                            <h3 class="font-medium text-gray-900 mb-3 flex items-center"><i
+                                    class="fas fa-upload mr-2 text-blue-500"></i> Upload Video</h3>
+                            <div class="upload-area p-5 text-center text-sm" @click="browseVideoFiles()"
+                                @dragover.prevent="$el.classList.add('drag-active')"
+                                @dragleave.prevent="$el.classList.remove('drag-active')"
+                                @drop.prevent="handleVideoDrop($event); $el.classList.remove('drag-active')">
+                                <i class="fas fa-video text-2xl text-gray-400 mb-2"></i>
+                                <p class="text-gray-500 mb-2">Drag video or click to browse</p>
+                                <p class="text-xs text-gray-400">MP4, MOV, AVI, MKV, WEBM</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card bg-white rounded-lg shadow">
+                        <div class="p-4 space-y-2">
+                            <h3 class="font-medium text-gray-900 mb-2 flex items-center"><i
+                                    class="fas fa-cogs mr-2 text-blue-500"></i> Processing Actions</h3>
+                            <div class="space-y-1 text-sm">
+                                <label class="flex items-center space-x-2"><input type="checkbox" x-model="videoActions.metadata"> Extract Metadata</label>
+                                <label class="flex items-center space-x-2"><input type="checkbox" x-model="videoActions.audio"> Extract Audio → MP3</label>
+                                <label class="flex items-center space-x-2"><input type="checkbox" x-model="videoActions.transcribe"> Transcribe Audio → Text</label>
+                                <label class="flex items-center space-x-2"><input type="checkbox" x-model="videoActions.export"> Export Transcript</label>
+                                <label class="flex items-center space-x-2"><input type="checkbox" x-model="videoActions.report"> Generate Summary Report</label>
+                            </div>
+                            <button class="btn btn-primary w-full mt-2" @click="runVideoActions()">Run Selected</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-9 space-y-4">
+                    <template x-if="selectedVideo">
+                        <div class="card p-4">
+                            <video controls class="w-full" :src="selectedVideo.preview"></video>
+                        </div>
+                    </template>
+                    <div class="card p-4" x-show="videoMetadata">
+                        <pre class="text-xs whitespace-pre-wrap" x-text="JSON.stringify(videoMetadata, null, 2)"></pre>
+                    </div>
+                    <div class="card p-4" x-show="videoTranscript">
+                        <pre class="text-xs whitespace-pre-wrap" x-text="videoTranscript"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <footer
@@ -1029,6 +1087,7 @@
     <script src="js/components/image-vision.js"></script>
     <script src="js/components/image-detection.js"></script>
     <script src="js/components/image-metadata.js"></script>
+    <script src="js/components/video-analysis.js"></script>
     <script src="js/utils/notifications.js"></script>
     <script src="js/utils/chart-renderer.js"></script>
     <script src="js/app.js"></script>
