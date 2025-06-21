@@ -109,6 +109,19 @@ const Common = {
         URL.revokeObjectURL(url);
     },
 
+    downloadBase64File(dataUrl, filename) {
+        try {
+            const [header, b64] = dataUrl.split(',');
+            const mime = (header.match(/data:(.*);base64/) || [])[1] || 'application/octet-stream';
+            const binary = atob(b64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            this.downloadAsFile(bytes, filename, mime);
+        } catch (e) {
+            console.error('downloadBase64File failed', e);
+        }
+    },
+
     // Animate element with CSS classes
     animateElement(element, animationClass, duration = 300) {
         return new Promise(resolve => {
