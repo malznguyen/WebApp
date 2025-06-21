@@ -1,5 +1,7 @@
 PyPDF2
 docx2txt
+python-docx
+openpyxl
 Pillow
 matplotlib
 numpy

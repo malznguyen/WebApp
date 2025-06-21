@@ -7,6 +7,7 @@ Enhanced Toolkit is a Python and JavaScript application for reverse image search
 - AI-powered image description using the OpenAI Vision API
 - Document summarization across multiple models (DeepSeek, Grok, ChatGPT)
 - Image metadata extraction and analysis
+- Video processing with transcription and metadata export
 - Web interface built with Tailwind CSS, Alpine.js, and Chart.js
 
 ## Technical Requirements

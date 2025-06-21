@@ -30,7 +30,7 @@ VISION_MODULE_AVAILABLE = False
 # --- Core Backend Imports ---
 # This structured import helps diagnose issues more easily.
 try:
-    from BE.utils.helpers import ensure_dir_exists
+    from BE.utils.helpers import ensure_dir_exists, generate_timestamp
     from BE.config.settings import (
         SERP_API_KEY, IMGUR_CLIENT_ID,
         CHATGPT_API_KEY, WINDOW_WIDTH, WINDOW_HEIGHT
@@ -48,6 +48,14 @@ try:
     )
     from BE.core.image_processing import validate_image_upload
     from BE.core.image_metadata import ImageMetadataExtractor
+    from BE.core.video_processing import (
+        extract_comprehensive_metadata,
+        transcribe_with_timestamps,
+        extract_audio_to_mp3,
+        export_transcript_multiple_formats,
+        extract_thumbnails,
+        generate_video_analysis_report,
+    )
     logger.info("✅ Core modules imported successfully.")
 except ImportError as e:
     logger.critical(f"❌ Failed to import a core backend module: {e}", exc_info=True)
@@ -433,6 +441,115 @@ def analyze_image_metadata(image_data_base64: str, filename: str, include_sensit
         logger.error(f"Metadata analysis failed for '{filename}': {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
+@eel.expose
+def extract_video_metadata(video_data_base64: str, filename: str) -> Dict[str, Any]:
+    """Extract comprehensive metadata from a video file."""
+    temp_path: Optional[str] = None
+    try:
+        video_bytes = validate_base64_data(video_data_base64, "data:video")
+        temp_path = create_temp_file(video_bytes, filename)
+        return extract_comprehensive_metadata(temp_path)
+    except Exception as e:
+        logger.error(f"Video metadata extraction failed for '{filename}': {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+    finally:
+        if temp_path:
+            cleanup_temp_file(temp_path)
+
+@eel.expose
+def transcribe_video_async_web(video_data_base64: str, filename: str) -> Dict[str, Any]:
+    """Transcribe video audio using Whisper."""
+    temp_path: Optional[str] = None
+    try:
+        video_bytes = validate_base64_data(video_data_base64, "data:video")
+        temp_path = create_temp_file(video_bytes, filename)
+        segments = transcribe_with_timestamps(temp_path, api_key=CHATGPT_API_KEY)
+        transcript_text = " ".join(seg.get('text', '') for seg in segments)
+        return {"success": True, "segments": segments, "transcript": transcript_text}
+    except Exception as e:
+        logger.error(f"Video transcription failed for '{filename}': {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+    finally:
+        if temp_path:
+            cleanup_temp_file(temp_path)
+
+@eel.expose
+def extract_video_audio(video_data_base64: str, filename: str) -> Dict[str, Any]:
+    """Extract audio track as MP3 and return base64 data."""
+    temp_path: Optional[str] = None
+    output_path: Optional[str] = None
+    try:
+        video_bytes = validate_base64_data(video_data_base64, "data:video")
+        temp_path = create_temp_file(video_bytes, filename)
+        base_name = os.path.splitext(os.path.basename(filename))[0]
+        output_path = os.path.join('temp', base_name + '.mp3')
+        extract_audio_to_mp3(temp_path, output_path)
+        with open(output_path, 'rb') as f:
+            audio_b64 = 'data:audio/mpeg;base64,' + base64.b64encode(f.read()).decode('utf-8')
+        return {'success': True, 'audio': audio_b64}
+    except Exception as e:
+        logger.error(f"Audio extraction failed for '{filename}': {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
+    finally:
+        if temp_path:
+            cleanup_temp_file(temp_path)
+        if output_path and os.path.isfile(output_path):
+            cleanup_temp_file(output_path)
+
+@eel.expose
+def export_video_transcript(transcript_segments: List[Dict[str, Any]], base_filename: str) -> Dict[str, Any]:
+    """Export transcript segments to multiple formats and return base64 files."""
+    temp_dir = ensure_dir_exists('temp')
+    try:
+        files = export_transcript_multiple_formats(transcript_segments, temp_dir, base_filename)
+        encoded = {}
+        mime_map = {
+            'txt': 'text/plain',
+            'json': 'application/json',
+            'csv': 'text/csv',
+            'srt': 'text/plain',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        }
+        for fmt, path in files.items():
+            with open(path, 'rb') as f:
+                encoded[fmt] = f"data:{mime_map.get(fmt,'application/octet-stream')};base64," + base64.b64encode(f.read()).decode('utf-8')
+        return {'success': True, 'files': encoded}
+    except Exception as e:
+        logger.error(f"Transcript export failed: {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
+    finally:
+        for path in files.values() if 'files' in locals() else []:
+            if os.path.isfile(path):
+                cleanup_temp_file(path)
+
+@eel.expose
+def generate_video_report(video_data_base64: str, filename: str) -> Dict[str, Any]:
+    """Generate a report containing metadata, transcript and thumbnails."""
+    temp_path: Optional[str] = None
+    report_path: Optional[str] = None
+    try:
+        video_bytes = validate_base64_data(video_data_base64, "data:video")
+        temp_path = create_temp_file(video_bytes, filename)
+        metadata = extract_comprehensive_metadata(temp_path)
+        segments = transcribe_with_timestamps(temp_path, api_key=CHATGPT_API_KEY)
+        base_name = os.path.splitext(os.path.basename(filename))[0] + '_' + generate_timestamp()
+        transcript_files = export_transcript_multiple_formats(segments, 'temp', base_name)
+        thumb_dir = os.path.join('temp', base_name + '_thumbs')
+        thumbnails = extract_thumbnails(temp_path, thumb_dir)
+        report_path = os.path.join('temp', base_name + '_report.docx')
+        generate_video_analysis_report(metadata, transcript_files, thumbnails, report_path)
+        with open(report_path, 'rb') as f:
+            report_b64 = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,' + base64.b64encode(f.read()).decode('utf-8')
+        return {'success': True, 'report': report_b64, 'metadata': metadata, 'segments': segments}
+    except Exception as e:
+        logger.error(f"Video report generation failed for '{filename}': {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
+    finally:
+        if temp_path:
+            cleanup_temp_file(temp_path)
+        if report_path and os.path.isfile(report_path):
+            cleanup_temp_file(report_path)
+
 def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
     """Validates and normalizes document processing settings received from the frontend."""
     normalized_settings: Dict[str, Any] = {}
@@ -732,7 +849,12 @@ def _verify_imports():
         ('process_url_document', process_url_document),
         ('extract_text', extract_text),
         ('validate_image_upload', validate_image_upload),
-        ('search_image_sync', search_image_sync)
+        ('search_image_sync', search_image_sync),
+        ('extract_video_metadata', extract_video_metadata),
+        ('transcribe_video_async_web', transcribe_video_async_web),
+        ('extract_video_audio', extract_video_audio),
+        ('export_video_transcript', export_video_transcript),
+        ('generate_video_report', generate_video_report)
     ]
     
     for func_name, func_obj in required_functions:
