@@ -2,7 +2,7 @@ import os
 import json
 import subprocess
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from openai import OpenAI
 from BE.utils.helpers import ensure_dir_exists
