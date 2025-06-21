@@ -11,6 +11,9 @@ import requests
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 
+from BE.core.task_manager import TaskManager
+from BE.core.download_generator import DownloadGenerator
+
 # --- Backend Path Setup ---
 # Ensures the 'BE' directory is in the Python path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -80,6 +83,7 @@ eel.init('FE')
 active_searches: Dict[str, threading.Thread] = {}
 active_processing_tasks: Dict[str, threading.Thread] = {}
 app_config: Optional[Dict[str, Any]] = None
+task_manager = TaskManager()
 
 # ===== UTILITY FUNCTIONS =====
 
@@ -315,11 +319,17 @@ def search_image_web(image_data_base64: str, filename: str, social_media_only: b
     finally:
         if temp_image_path: cleanup_temp_file(temp_image_path)
 
-def _run_async_search_task(task_id: str, *args, **kwargs):
+def _run_async_search_task(task_id: str, cancel_event: threading.Event, *args, **kwargs):
     """Wrapper specifically for search tasks."""
     try:
+        if cancel_event.is_set():
+            return
         eel.searchProgress(task_id, 20, "Uploading and preparing image...")()
+        if cancel_event.is_set():
+            return
         result_dict = search_image_web(*args, **kwargs)
+        if cancel_event.is_set():
+            return
         eel.searchProgress(task_id, 100, "Search complete.")()
         if result_dict.get('success'):
             eel.searchComplete(task_id, result_dict['results'])()
@@ -330,13 +340,22 @@ def _run_async_search_task(task_id: str, *args, **kwargs):
         eel.searchError(task_id, "System Error in Search Thread", str(e))()
     finally:
         active_searches.pop(task_id, None)
+        task_manager.cancel(task_id)
 
-def _run_async_vision_task(task_id: str, *args, **kwargs):
+def _run_async_vision_task(task_id: str, cancel_event: threading.Event, *args, **kwargs):
     """Wrapper specifically for vision tasks."""
     try:
+        if cancel_event.is_set():
+            return
         eel.visionProgress(task_id, 15, "Validating and preparing image...")()
+        if cancel_event.is_set():
+            return
         eel.visionProgress(task_id, 40, "Sending image to AI for analysis...")()
+        if cancel_event.is_set():
+            return
         result_dict = describe_image_web(*args, **kwargs)
+        if cancel_event.is_set():
+            return
         eel.visionProgress(task_id, 90, "Processing AI response...")()
         if result_dict.get('success'):
             eel.visionComplete(task_id, result_dict)()
@@ -347,13 +366,22 @@ def _run_async_vision_task(task_id: str, *args, **kwargs):
         eel.visionError(task_id, "System Error in Vision Thread", str(e))()
     finally:
         active_processing_tasks.pop(task_id, None)
+        task_manager.cancel(task_id)
 
-def _run_async_detection_task(task_id: str, *args, **kwargs):
+def _run_async_detection_task(task_id: str, cancel_event: threading.Event, *args, **kwargs):
     """Wrapper for AI detection tasks."""
     try:
+        if cancel_event.is_set():
+            return
         eel.detectionProgress(task_id, 15, "Validating and preparing image...")()
+        if cancel_event.is_set():
+            return
         eel.detectionProgress(task_id, 40, "Sending image to AI for analysis...")()
+        if cancel_event.is_set():
+            return
         result_dict = detect_ai_image_web(*args, **kwargs)
+        if cancel_event.is_set():
+            return
         eel.detectionProgress(task_id, 90, "Processing AI response...")()
         if result_dict.get('success'):
             eel.detectionComplete(task_id, result_dict)()
@@ -364,12 +392,15 @@ def _run_async_detection_task(task_id: str, *args, **kwargs):
         eel.detectionError(task_id, "System Error in Detection Thread", str(e))()
     finally:
         active_processing_tasks.pop(task_id, None)
+        task_manager.cancel(task_id)
 
 @eel.expose
 def search_image_async_web(image_data_base64: str, filename: str, social_media_only: bool = False) -> str:
     search_id = f"search_{int(time.time())}"
-    thread = threading.Thread(target=_run_async_search_task, args=(search_id, image_data_base64, filename, social_media_only))
+    stop_event = threading.Event()
+    thread = threading.Thread(target=_run_async_search_task, args=(search_id, stop_event, image_data_base64, filename, social_media_only))
     active_searches[search_id] = thread
+    task_manager.register(search_id, thread, stop_event)
     thread.start()
     logger.debug(f"Started async search thread with ID: {search_id}")
     return search_id
@@ -392,8 +423,10 @@ def describe_image_web(image_data_base64: str, filename: str, language: str = "v
 def describe_image_async_web(image_data_base64: str, filename: str, language: str = "vietnamese", detail_level: str = "detailed", custom_prompt: Optional[str] = None) -> str:
     """Asynchronous version for vision tasks."""
     task_id = f"vision_{int(time.time())}"
-    thread = threading.Thread(target=_run_async_vision_task, args=(task_id, image_data_base64, filename, language, detail_level, custom_prompt))
+    stop_event = threading.Event()
+    thread = threading.Thread(target=_run_async_vision_task, args=(task_id, stop_event, image_data_base64, filename, language, detail_level, custom_prompt))
     active_processing_tasks[task_id] = thread
+    task_manager.register(task_id, thread, stop_event)
     thread.start()
     logger.debug(f"Started async vision thread with ID: {task_id}")
     return task_id
@@ -416,11 +449,27 @@ def detect_ai_image_web(image_data_base64: str, filename: str) -> Dict[str, Any]
 def detect_ai_image_async_web(image_data_base64: str, filename: str) -> str:
     """Asynchronous version of AI detection."""
     task_id = f"aidetect_{int(time.time())}"
-    thread = threading.Thread(target=_run_async_detection_task, args=(task_id, image_data_base64, filename))
+    stop_event = threading.Event()
+    thread = threading.Thread(target=_run_async_detection_task, args=(task_id, stop_event, image_data_base64, filename))
     active_processing_tasks[task_id] = thread
+    task_manager.register(task_id, thread, stop_event)
     thread.start()
     logger.debug(f"Started async detection thread with ID: {task_id}")
     return task_id
+
+@eel.expose
+def stop_task(task_id: str) -> Dict[str, Any]:
+    """Request cancellation of a running task."""
+    try:
+        if not task_id:
+            return {'success': False, 'error': 'Missing task_id'}
+        cancelled = task_manager.cancel(task_id)
+        if cancelled:
+            return {'success': True}
+        return {'success': False, 'error': 'Task not found'}
+    except Exception as e:
+        logger.error(f"Failed to stop task {task_id}: {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
 
 @eel.expose
 def analyze_image_metadata(image_data_base64: str, filename: str, include_sensitive: bool = False) -> Dict[str, Any]:
@@ -432,6 +481,21 @@ def analyze_image_metadata(image_data_base64: str, filename: str, include_sensit
     except Exception as e:
         logger.error(f"Metadata analysis failed for '{filename}': {e}", exc_info=True)
         return {"success": False, "error": str(e)}
+
+@eel.expose
+def download_image_analysis(result: Dict[str, Any], filename: str) -> Dict[str, Any]:
+    """Generate a ZIP file containing image analysis results."""
+    try:
+        safe_name = DownloadGenerator.sanitize_filename(filename)
+        files = {
+            f"{safe_name}_analysis.json": DownloadGenerator.generate_json(result),
+            f"{safe_name}_analysis.txt": DownloadGenerator.generate_txt(json.dumps(result, ensure_ascii=False))
+        }
+        zip_path = DownloadGenerator.generate_zip(files)
+        return {'success': True, 'path': zip_path}
+    except Exception as e:
+        logger.error(f"Download generation failed for {filename}: {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
 
 def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
     """Validates and normalizes document processing settings received from the frontend."""
@@ -523,6 +587,7 @@ def process_document_web(doc_file_path: str, settings_from_frontend: Dict[str, A
 def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[str, Any]]], settings: Dict[str, Any]) -> str:
     """Correctly starts and handles asynchronous document processing."""
     process_id = f"doc_process_{int(time.time())}_{threading.get_ident()}"
+    stop_event = threading.Event()
 
     def run_doc_processing_in_thread():
         temp_file_for_this_task: Optional[str] = None
@@ -531,6 +596,8 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
         final_result_for_frontend: Dict[str, Any] = {}
 
         try:
+            if stop_event.is_set():
+                return
             eel.processingProgress(process_id, 5, "Initializing processing...")()
             normalized_settings = validate_processing_settings(settings)
             
@@ -540,15 +607,21 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                 file_list = file_input.get('files', [])
                 url_list = file_input.get('urls', [])
                 log_filename = f"{len(file_list)} files / {len(url_list)} urls batch"
+                if stop_event.is_set():
+                    return
                 eel.processingProgress(process_id, 10, f"Uploading {log_filename}...")()
 
                 for i, item_dict in enumerate(file_list):
+                    if stop_event.is_set():
+                        return
                     eel.processingProgress(process_id, 10 + int(i / max(len(file_list),1) * 15), f"Uploading {item_dict.get('filename', 'file ' + str(i+1))}...")()
                     upload_resp = upload_file_web(item_dict['file_data'], item_dict['filename'])
                     if not upload_resp['success']:
                         raise IOError(f"Upload failed for {item_dict['filename']}: {upload_resp.get('error', 'Unknown error')}")
                     temp_files_for_batch.append(upload_resp['temp_path'])
 
+                if stop_event.is_set():
+                    return
                 eel.processingProgress(process_id, 30, "Starting batch synthesis...")()
 
                 raw_processing_result = process_documents_batch_web(temp_files_for_batch, normalized_settings, urls=url_list)
@@ -576,6 +649,8 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
             else: # SINGLE ITEM PROCESSING (File or URL)
                 if isinstance(file_input, dict) and 'url' in file_input:
                     log_filename = file_input['url']
+                    if stop_event.is_set():
+                        return
                     eel.processingProgress(process_id, 20, f"Processing URL: {log_filename}...")()
                     raw_processing_result = process_url_document(
                         file_input['url'],
@@ -588,11 +663,15 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                 else:
                     file_data = file_input['file_data']
                     log_filename = file_input['filename']
+                    if stop_event.is_set():
+                        return
                     eel.processingProgress(process_id, 15, f"Uploading {log_filename}...")()
                     upload_resp = upload_file_web(file_data, log_filename)
                     if not upload_resp['success']: 
                         raise IOError(f"Upload failed for {log_filename}: {upload_resp.get('error', 'Unknown error')}")
                     temp_file_for_this_task = upload_resp['temp_path']
+                    if stop_event.is_set():
+                        return
                     eel.processingProgress(process_id, 30, f"Processing file: {log_filename}...")()
                     raw_processing_result = process_document(file_path=temp_file_for_this_task, **normalized_settings)
                 
@@ -619,6 +698,8 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
                     'has_errors': has_any_errors
                 }
 
+            if stop_event.is_set():
+                return
             eel.processingProgress(process_id, 100, f"Finalizing results for {log_filename}...")()
             eel.processingComplete(process_id, final_result_for_frontend)()
             logger.info(f"Processing complete for '{log_filename}' (ID: {process_id})")
@@ -631,10 +712,12 @@ def process_document_async_web(file_input: Union[str, Dict[str, Any], List[Dict[
             if temp_file_for_this_task: cleanup_temp_file(temp_file_for_this_task)
             for path_to_clean in temp_files_for_batch: cleanup_temp_file(path_to_clean)
             active_processing_tasks.pop(process_id, None)
+            task_manager.cancel(process_id)
             logger.debug(f"Cleaned up resources for process ID: {process_id}")
 
     doc_process_thread = threading.Thread(target=run_doc_processing_in_thread, daemon=True)
     active_processing_tasks[process_id] = doc_process_thread
+    task_manager.register(process_id, doc_process_thread, stop_event)
     doc_process_thread.start()
     logger.info(f"Started document processing thread with ID: {process_id}")
     return process_id

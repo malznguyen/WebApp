@@ -187,6 +187,7 @@
                                     <div class="progress-bar" :style="'width: ' + visionState.progress + '%'"></div>
                                 </div>
                                 <p class="text-xs text-gray-600 text-center" x-text="visionState.status"></p>
+                                <button class="btn btn-secondary btn-xs mt-1" @click="stopVisionAnalysis()">Stop</button>
                             </div>
 
                             <div class="action-row">
@@ -200,6 +201,7 @@
                                     <div class="progress-bar" :style="'width: ' + detectionState.progress + '%'"></div>
                                 </div>
                                 <p class="text-xs text-gray-600 text-center" x-text="detectionState.status"></p>
+                                <button class="btn btn-secondary btn-xs mt-1" @click="stopDetection()">Stop</button>
                             </div>
 
                             <div class="action-row">
@@ -227,6 +229,7 @@
                                     <div class="progress-bar" :style="'width: ' + searchProgress + '%'"></div>
                                 </div>
                                 <p class="text-sm text-gray-600 text-center" x-text="searchStatus"></p>
+                                <button class="btn btn-secondary btn-xs mt-1" @click="stopImageSearch()">Stop</button>
                             </div>
                         </div>
                         <button class="btn btn-primary w-full btn-lg mt-4" @click="runSelectedActions()" :disabled="Object.values(selectedActions).filter(Boolean).length === 0">
@@ -1029,6 +1032,7 @@
     <script src="js/components/image-vision.js"></script>
     <script src="js/components/image-detection.js"></script>
     <script src="js/components/image-metadata.js"></script>
+    <script src="js/components/stop-download-ui.js"></script>
     <script src="js/utils/notifications.js"></script>
     <script src="js/utils/chart-renderer.js"></script>
     <script src="js/app.js"></script>

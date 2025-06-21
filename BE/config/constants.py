@@ -52,3 +52,6 @@ SOCIAL_MEDIA_DOMAINS = [
 
 # Chọn chỉ lọc kết quả mạng xã hội mặc định
 SOCIAL_MEDIA_FILTER_DEFAULT = True
+
+# Download limits
+DOWNLOAD_MAX_SIZE_MB = 50

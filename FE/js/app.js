@@ -69,6 +69,7 @@ function app() {
         searchProgress: 0,
         searchStatus: '',
         searchResults: [],
+        activeSearchId: null,
         resultsFilter: 'all',
         viewMode: 'list',
         canSearch: false,
@@ -362,6 +363,7 @@ function app() {
             try {
                 if (this.backendConnected) {
                     const searchId = await eel.search_image_async_web(this.selectedImage.data, this.selectedImage.name, this.searchOptions.socialOnly)();
+                    this.activeSearchId = searchId;
                     this.addLogEntry('info', `Async image search started with ID: ${searchId}`);
                 } else {
                     this.addLogEntry('info', 'Running image search in demo mode.');
@@ -407,6 +409,7 @@ function app() {
             this.searchStatus = `Search completed. Found ${this.searchResults.length} results.`;
             this.isSearching = false;
             this.searchProgress = 100;
+            this.activeSearchId = null;
         },
 
         handleEelSearchError(searchId, errorTitle, errorMessage) {
@@ -416,6 +419,7 @@ function app() {
             this.searchStatus = `Error: ${errorMessage}`;
             this.isSearching = false;
             this.searchProgress = 0;
+            this.activeSearchId = null;
         },
 
         // ===== VISION METHODS (không đổi) =====
@@ -688,6 +692,27 @@ function app() {
             this.detectionState.result = { error: message };
             this.addLogEntry('error', `AI detection failed: ${title} - ${message}`);
             this.showNotification('error', title, message);
+        },
+
+        stopVisionAnalysis() {
+            if (this.visionState.taskId) {
+                this.visionState.status = 'Stopping...';
+                StopDownloadUI.stopTask(this.visionState.taskId);
+            }
+        },
+
+        stopDetection() {
+            if (this.detectionState.taskId) {
+                this.detectionState.status = 'Stopping...';
+                StopDownloadUI.stopTask(this.detectionState.taskId);
+            }
+        },
+
+        stopImageSearch() {
+            if (this.activeSearchId) {
+                this.searchStatus = 'Stopping...';
+                StopDownloadUI.stopTask(this.activeSearchId);
+            }
         },
 
         clearDetectionResult() {
