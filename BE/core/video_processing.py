@@ -1,10 +1,12 @@
 import os
-import io
-import json
+import sys
 import logging
 import subprocess
 import tempfile
+import json
 from typing import Dict, Any, List, Optional
+import imageio_ffmpeg
+import io
 
 from BE.utils.helpers import ensure_dir_exists
 
@@ -16,12 +18,43 @@ except Exception:  # pragma: no cover - optional
 logger = logging.getLogger('ImageSearchApp')
 
 
+def _get_executable(name: str) -> str:
+    """Locate or download FFmpeg-related executables."""
+    try:
+        # Lấy đường dẫn đến file ffmpeg, imageio-ffmpeg sẽ tải về nếu cần
+        ffmpeg_exe_path = imageio_ffmpeg.get_ffmpeg_exe()
+        # Thư mục chứa các file thực thi
+        exe_dir = os.path.dirname(ffmpeg_exe_path)
+
+        # Tạo đường dẫn cho file được yêu cầu (ffmpeg hoặc ffprobe)
+        executable_path = os.path.join(exe_dir, name)
+
+        # Thêm đuôi .exe cho Windows
+        if sys.platform == 'win32' and not executable_path.endswith('.exe'):
+            executable_path += '.exe'
+
+        if not os.path.isfile(executable_path):
+            raise FileNotFoundError(f"Could not find '{name}' in the FFmpeg directory.")
+
+        logger.info(f"Successfully located executable: {executable_path}")
+        return executable_path
+    except Exception as e:
+        logger.error(
+            f"Failed to get or download FFmpeg executable '{name}': {e}",
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"Could not automatically get FFmpeg. Please check your network connection or install FFmpeg manually. Error: {e}"
+        )
+
+
 # --- Metadata Extraction ---
 
 def _run_ffprobe(video_path: str) -> Dict[str, Any]:
     """Run ffprobe and return parsed JSON."""
+    ffprobe_path = _get_executable('ffprobe')
     cmd = [
-        "ffprobe",
+        ffprobe_path,
         "-v",
         "error",
         "-print_format",
@@ -51,12 +84,13 @@ def extract_comprehensive_metadata(video_path: str) -> Dict[str, Any]:
         meta["error"] = "File not found"
         return meta
 
-    data = _run_ffprobe(video_path)
-    if not data:
-        meta["error"] = "ffprobe_error"
-        return meta
-
     try:
+        _get_executable('ffprobe')
+        data = _run_ffprobe(video_path)
+        if not data:
+            meta["error"] = "ffprobe_error"
+            return meta
+
         format_info = data.get("format", {})
         streams = data.get("streams", [])
         video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
@@ -92,6 +126,8 @@ def extract_comprehensive_metadata(video_path: str) -> Dict[str, Any]:
         meta["gps"] = gps_data
         meta["exif"] = exif_data
         meta["success"] = True
+    except RuntimeError as e:
+        meta["error"] = str(e)
     except Exception as e:  # pragma: no cover
         logger.error(f"Metadata parsing failed for {video_path}: {e}")
         meta["error"] = str(e)
@@ -107,6 +143,15 @@ def transcribe_with_timestamps(video_path: str) -> Dict[str, Any]:
 
     if not os.path.isfile(video_path):
         return {"success": False, "error": "File not found"}
+
+    MAX_SIZE = 25 * 1024 * 1024
+    if os.path.getsize(video_path) > MAX_SIZE:
+        return {"success": False, "error": "File exceeds 25MB limit"}
+
+    try:
+        _get_executable('ffmpeg')
+    except RuntimeError:
+        return {"success": False, "error": "Lỗi: Không thể tự động tải về FFmpeg để xử lý âm thanh."}
 
     try:
         client = OpenAI()
