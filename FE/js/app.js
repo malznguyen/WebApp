@@ -93,6 +93,13 @@ function app() {
         contentTab: 'original',
         canProcess: false,
 
+        // ===== VIDEO PROCESSING STATE =====
+        videoFile: null,
+        videoPreview: null,
+        videoMetadata: null,
+        videoTranscript: null,
+        metaOpen: false,
+
         // Updated panels state với summaryMode panel
         settingsPanels: {
             summaryMode: true,    // 🆕 Mở mặc định để user thấy ngay
@@ -265,12 +272,14 @@ function app() {
                 e.preventDefault(); e.stopPropagation();
                 if (this.activeTab === 'image-search') this.handleImageDrop(e);
                 else if (this.activeTab === 'document-summary') this.handleDocumentDrop(e);
+                else if (this.activeTab === 'video-processing') this.handleVideoDrop(e);
             });
             document.addEventListener('keydown', (e) => {
                 if (e.ctrlKey || e.metaKey) {
                     const key = e.key.toLowerCase();
                     if (key === '1') { e.preventDefault(); this.activeTab = 'image-search'; }
                     else if (key === '2') { e.preventDefault(); this.activeTab = 'document-summary'; }
+                    else if (key === '3') { e.preventDefault(); this.activeTab = 'video-processing'; }
                     else if (key === 'l') { e.preventDefault(); this.logPanelExpanded = !this.logPanelExpanded; }
                 }
             });
@@ -1387,6 +1396,117 @@ function app() {
                     ChartRenderer.destroyChart('wordFrequencyChart');
                 }
             });
+        },
+
+        // ===== VIDEO PROCESSING METHODS =====
+        handleVideoDrop(event) {
+            const files = Array.from(event.dataTransfer.files);
+            if (files.length) this.processVideoFile(files[0]);
+        },
+
+        browseVideoFiles() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.mp4,.mov,.avi,.mkv,.webm';
+            input.onchange = (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    this.processVideoFile(e.target.files[0]);
+                }
+            };
+            input.click();
+        },
+
+        async processVideoFile(file) {
+            const check = VideoAnalysis.validateVideoFile(file);
+            if (!check.valid) {
+                this.showNotification('error', 'Invalid Video', check.error);
+                this.addLogEntry('error', `Video validation failed: ${check.error}`);
+                return;
+            }
+            this.isLoading = true;
+            this.loadingTitle = 'Uploading Video';
+            try {
+                const base64Data = await this.fileToBase64(file);
+                if (typeof eel !== 'undefined') {
+                    const resp = await eel.upload_file_web(base64Data, file.name)();
+                    if (resp.success) {
+                        this.videoFile = { name: file.name, size: file.size, tempPath: resp.temp_path };
+                        this.videoPreview = base64Data;
+                        this.addLogEntry('success', `Video ${file.name} uploaded`);
+                    } else {
+                        throw new Error(resp.error || 'Upload failed');
+                    }
+                } else {
+                    this.videoFile = { name: file.name, size: file.size, tempPath: null };
+                    this.videoPreview = base64Data;
+                }
+            } catch (err) {
+                this.showNotification('error', 'Video Error', err.message);
+                this.addLogEntry('error', `Video processing failed: ${err.message}`);
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        async runVideoMetadata() {
+            if (!this.videoFile || !this.videoFile.tempPath) return;
+            this.isLoading = true;
+            this.loadingTitle = 'Extracting Metadata';
+            try {
+                const result = await eel.extract_video_metadata(this.videoFile.tempPath)();
+                if (result.success) {
+                    this.videoMetadata = VideoAnalysis.formatMetadata(result);
+                    this.addLogEntry('success', 'Video metadata extracted');
+                } else {
+                    throw new Error(result.error || 'Metadata failed');
+                }
+            } catch (err) {
+                this.showNotification('error', 'Metadata Error', err.message);
+                this.addLogEntry('error', `Metadata error: ${err.message}`);
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        async runVideoTranscription() {
+            if (!this.videoFile || !this.videoFile.tempPath) return;
+            this.isLoading = true;
+            this.loadingTitle = 'Transcribing';
+            try {
+                const result = await eel.transcribe_video_audio(this.videoFile.tempPath)();
+                if (result.success) {
+                    this.videoTranscript = result.transcript;
+                    this.addLogEntry('success', 'Transcription complete');
+                } else {
+                    throw new Error(result.error || 'Transcription failed');
+                }
+            } catch (err) {
+                this.showNotification('error', 'Transcription Error', err.message);
+                this.addLogEntry('error', `Transcription error: ${err.message}`);
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        async exportVideoTranscript() {
+            if (!this.videoTranscript || !this.videoFile) return;
+            this.isLoading = true;
+            this.loadingTitle = 'Exporting Transcript';
+            try {
+                const baseName = this.videoFile.name.replace(/\.[^.]+$/, '');
+                const result = await eel.export_video_transcript(this.videoTranscript, baseName)();
+                if (result.success) {
+                    this.showNotification('success', 'Export Complete', 'Transcript exported');
+                    this.addLogEntry('success', 'Transcript export finished');
+                } else {
+                    throw new Error(result.error || 'Export failed');
+                }
+            } catch (err) {
+                this.showNotification('error', 'Export Error', err.message);
+                this.addLogEntry('error', `Export error: ${err.message}`);
+            } finally {
+                this.isLoading = false;
+            }
         },
 
         async performFullCleanup() {

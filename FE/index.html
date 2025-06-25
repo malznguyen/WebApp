@@ -82,6 +82,13 @@
                     <span class="hidden sm:inline">Document Summary</span>
                     <span class="sm:hidden">Docs</span>
                 </button>
+                <button @click="activeTab = 'video-processing'"
+                    :class="activeTab === 'video-processing' ? 'tab-button active' : 'tab-button'"
+                    class="px-3 sm:px-6 py-2 font-medium rounded-t-lg transition-colors text-sm sm:text-base">
+                    <i class="fas fa-video mr-1 sm:mr-2"></i>
+                    <span class="hidden sm:inline">Video Processing</span>
+                    <span class="sm:hidden">Video</span>
+                </button>
             </nav>
 
             <div class="flex items-center space-x-2 sm:space-x-4">
@@ -921,6 +928,54 @@
                 </div>
             </div>
         </div>
+    <div x-show="activeTab === 'video-processing'" x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" class="h-full">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 sm:p-6 max-w-screen-2xl mx-auto">
+            <div class="lg:col-span-3 space-y-4">
+                <div class="card bg-white rounded-lg shadow">
+                    <div class="p-4">
+                        <h3 class="font-medium text-gray-900 mb-3 flex items-center"><i class="fas fa-upload mr-2 text-blue-500"></i>Upload Video</h3>
+                        <div class="upload-area p-5 text-center text-sm" @click="browseVideoFiles()"
+                            @dragover.prevent="$el.classList.add('drag-active')"
+                            @dragleave.prevent="$el.classList.remove('drag-active')"
+                            @drop.prevent="handleVideoDrop($event); $el.classList.remove('drag-active')">
+                            <i class="fas fa-video text-2xl text-gray-400 mb-2"></i>
+                            <p class="text-gray-500 mb-2">Drag video or click to browse</p>
+                            <p class="text-xs text-gray-400">MP4, MOV, AVI, MKV, WEBM</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card bg-white rounded-lg shadow">
+                    <div class="p-4 space-y-2">
+                        <h3 class="font-medium text-gray-900 mb-2 flex items-center"><i class="fas fa-tasks mr-2 text-blue-500"></i>Processing Actions</h3>
+                        <button @click="runVideoMetadata()" class="btn btn-secondary btn-sm w-full"><i class="fas fa-info-circle mr-2"></i>Extract Metadata</button>
+                        <button @click="runVideoTranscription()" class="btn btn-secondary btn-sm w-full"><i class="fas fa-closed-captioning mr-2"></i>Transcribe Audio</button>
+                        <button @click="exportVideoTranscript('txt')" class="btn btn-secondary btn-sm w-full"><i class="fas fa-file-export mr-2"></i>Export Transcript</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-9 space-y-4">
+                <div x-show="!videoPreview" class="flex items-center justify-center h-64 text-center">
+                    <p class="text-gray-500 text-lg">Upload a video to begin.</p>
+                </div>
+                <div x-show="videoPreview" class="space-y-4">
+                    <video controls class="w-full max-h-72" :src="videoPreview"></video>
+                    <div x-show="videoMetadata" class="card p-3 bg-white border rounded">
+                        <div class="flex justify-between items-center cursor-pointer" @click="metaOpen = !metaOpen">
+                            <h4 class="font-medium text-sm text-gray-800">Metadata</h4>
+                            <i class="fas text-gray-400" :class="metaOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                        </div>
+                        <div x-show="metaOpen" x-collapse.duration.300ms class="mt-2 text-xs whitespace-pre-wrap" x-text="JSON.stringify(videoMetadata, null, 2)"></div>
+                    </div>
+                    <div x-show="videoTranscript" class="card p-3 bg-white border rounded">
+                        <h4 class="font-medium text-sm text-gray-800 mb-2">Transcript</h4>
+                        <pre class="text-xs whitespace-pre-wrap" x-text="VideoAnalysis.transcriptText(videoTranscript)"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     </main>
 
     <footer
@@ -1032,6 +1087,7 @@
     <script src="js/components/image-vision.js"></script>
     <script src="js/components/image-detection.js"></script>
     <script src="js/components/image-metadata.js"></script>
+    <script src="js/components/video-analysis.js"></script>
     <script src="js/components/stop-download-ui.js"></script>
     <script src="js/utils/notifications.js"></script>
     <script src="js/utils/chart-renderer.js"></script>

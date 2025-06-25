@@ -51,6 +51,13 @@ try:
     )
     from BE.core.image_processing import validate_image_upload
     from BE.core.image_metadata import ImageMetadataExtractor
+    from BE.core.video_processing import (
+        extract_comprehensive_metadata,
+        transcribe_with_timestamps,
+        export_transcript_multiple_formats,
+        extract_thumbnails,
+        generate_video_analysis_report,
+    )
     logger.info("✅ Core modules imported successfully.")
 except ImportError as e:
     logger.critical(f"❌ Failed to import a core backend module: {e}", exc_info=True)
@@ -496,6 +503,60 @@ def download_image_analysis(result: Dict[str, Any], filename: str) -> Dict[str, 
     except Exception as e:
         logger.error(f"Download generation failed for {filename}: {e}", exc_info=True)
         return {'success': False, 'error': str(e)}
+
+
+@eel.expose
+def extract_video_metadata(video_path: str) -> Dict[str, Any]:
+    """Extract comprehensive metadata from a video file."""
+    try:
+        return extract_comprehensive_metadata(video_path)
+    except Exception as e:
+        logger.error(f"Video metadata extraction failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+@eel.expose
+def transcribe_video_audio(video_path: str) -> Dict[str, Any]:
+    """Transcribe video audio using Whisper."""
+    try:
+        return transcribe_with_timestamps(video_path)
+    except Exception as e:
+        logger.error(f"Video transcription failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+@eel.expose
+def export_video_transcript(transcript_json: Dict[str, Any], base_name: str) -> Dict[str, Any]:
+    """Export transcript in multiple formats."""
+    try:
+        out_dir = tempfile.mkdtemp(prefix="transcript_")
+        return export_transcript_multiple_formats(transcript_json, out_dir, base_name)
+    except Exception as e:
+        logger.error(f"Export transcript failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+@eel.expose
+def extract_video_thumbnails(video_path: str, interval: int = 5) -> Dict[str, Any]:
+    """Extract thumbnails from video."""
+    try:
+        out_dir = tempfile.mkdtemp(prefix="thumbs_")
+        files = extract_thumbnails(video_path, out_dir, interval)
+        return {"success": True, "files": files}
+    except Exception as e:
+        logger.error(f"Thumbnail extraction failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+@eel.expose
+def generate_video_report(metadata: Dict[str, Any], transcript_json: Dict[str, Any], thumbnails: List[str], base_name: str) -> Dict[str, Any]:
+    """Generate comprehensive report for video analysis."""
+    try:
+        out_dir = tempfile.mkdtemp(prefix="report_")
+        return generate_video_analysis_report(metadata, transcript_json, thumbnails, out_dir, base_name)
+    except Exception as e:
+        logger.error(f"Report generation failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 def validate_processing_settings(settings_from_frontend: Dict[str, Any]) -> Dict[str, Any]:
     """Validates and normalizes document processing settings received from the frontend."""
